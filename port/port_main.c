@@ -36,13 +36,9 @@
 #include "port_imgui_menu.h"
 #include "port_mods.h"
 
-/*
- * Region-specific asset offset header is included based on detected ROM.
- * Both are always available; the correct mapDataBase is selected at runtime.
- */
+/* Region-specific compile-time asset offsets. All three headers are supported;
+ * JP's generated build/JP asset headers remain a separate build prerequisite. */
 #if defined(JP)
-/* ROM-gated: generated from a JP build. Absent until then, so a JP build
- * fails here with a clear missing-header error. See docs/JP_PORT_ENABLEMENT.md. */
 #include "port_offset_JP.h"
 #elif defined(EU)
 #include "port_offset_EU.h"

@@ -16,6 +16,11 @@ using the filename below:
 | EU      | `baserom_eu.gba` | `cff199b36ff173fb6faf152653d1bccf87c26fb7` |
 | JP      | `baserom_jp.gba` | `6c5404a1effb17f481f352181d0f1c61a2765c5d` |
 
+The Angel Team Chinese SP4 ROM (SHA1
+`ba04cfbe93d12d2ad684c52234472fa12a5b53d7`) is an exact supported runtime
+profile. Use clean JP as the `--game_version=JP` compile-time asset baseline;
+SP4 is selected automatically when the finished port loads that ROM.
+
 This repository does **not** ship the ROM.
 
 ## Dependencies
@@ -133,7 +138,8 @@ If Homebrew packages report as missing even after `brew install`, run
 
 - **"Could not load baserom.gba"** — place the ROM next to the binary, or
   in the working directory you launch from. Supported names: `baserom.gba`,
-  `baserom_eu.gba`, `tmc.gba`, `tmc_eu.gba`.
+  `baserom_eu.gba`, `baserom_jp.gba`, `tmc.gba`, `tmc_eu.gba`, `tmc_jp.gba`.
+  The desktop ROM picker also accepts a supported ROM with any `.gba` filename.
 - **First launch is slow / shows EXTRACTING ASSETS** — expected. The asset
   cache is built once, then warm launches skip extraction.
 - **Black window on launch** — check `stderr` for ROM-load errors. The port

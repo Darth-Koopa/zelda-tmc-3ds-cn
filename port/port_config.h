@@ -5,11 +5,8 @@
  * auto-detection. All region-specific ROM offsets are stored in RomOffsets
  * and selected at load time based on the game code at ROM offset 0xAC.
  *
- * JP NOTE: the JP path is wired but its offset values are ROM-derived and
- * cannot be produced without a JP baserom (BZMJ, matching tmc_jp.sha1) and a
- * JP build. kRomOffsets_JP below is a placeholder until then — see
- * docs/JP_PORT_ENABLEMENT.md. A JP build also requires the generated
- * port_offset_JP.h, so it will not compile until that file exists.
+ * JP offsets are selected at runtime for both the clean retail ROM and known
+ * patch profiles whose gameplay data remains based on that ROM.
  */
 #pragma once
 #include "port_types.h"
@@ -19,7 +16,7 @@ typedef enum {
     ROM_REGION_UNKNOWN = 0,
     ROM_REGION_USA, /* Game code: BZME */
     ROM_REGION_EU,  /* Game code: BZMP */
-    ROM_REGION_JP,  /* Game code: BZMJ — offsets UNVERIFIED (ROM-gated) */
+    ROM_REGION_JP,  /* Game code: BZMJ */
 } RomRegion;
 
 /* The checked-in area-table asset index is generated from the USA layout.
@@ -30,17 +27,26 @@ static inline u32 Port_ShouldUseAreaAssetCacheForRegion(RomRegion region) {
     return region == ROM_REGION_USA;
 }
 
+/* Palette-group caches are generated from the USA palette layout. JP and
+ * patched JP profiles must keep the loaded ROM authoritative, just like their
+ * gfx/text/area paths, or a stale clean-JP cache can overwrite patch data. */
+static inline u32 Port_ShouldUsePaletteAssetCacheForRegion(RomRegion region) {
+    return region == ROM_REGION_USA;
+}
+
 /* Packed u32 pointers to the 40 pixel-level collision masks used by
  * sub_080086D8. The mask payloads are identical between USA and EU, but the
  * EU linker moves both this table and every target by 0x98 bytes. */
 #define PORT_COLLISION_SHAPE_PTRS_USA 0x0000823Cu
 #define PORT_COLLISION_SHAPE_PTRS_EU 0x000082D4u
+#define PORT_COLLISION_SHAPE_PTRS_JP PORT_COLLISION_SHAPE_PTRS_USA
 
 /* u16 tile traversal/layer properties read by sub_080B1B84/1BA4.  The
  * payload is identical, but EU relocates it after a larger startup pointer
  * block. */
 #define PORT_TILE_TYPE_PROPERTIES_USA 0x00000360u
 #define PORT_TILE_TYPE_PROPERTIES_EU 0x000003A8u
+#define PORT_TILE_TYPE_PROPERTIES_JP PORT_TILE_TYPE_PROPERTIES_USA
 
 /* Kinstone fusers use two 120-entry packed-pointer tables near the start of
  * the ROM. The universal port is compiled from USA data stubs, but the EU
@@ -55,8 +61,10 @@ static inline u32 Port_ShouldUseAreaAssetCacheForRegion(RomRegion region) {
 #define PORT_FUSER_FUSION_RECORD_BYTES (5u + PORT_FUSER_FUSION_MAX_OFFERS + 1u)
 #define PORT_FUSION_TEXT_PTRS_USA 0x00001A7Cu
 #define PORT_FUSION_TEXT_PTRS_EU 0x00001B24u
+#define PORT_FUSION_TEXT_PTRS_JP PORT_FUSION_TEXT_PTRS_USA
 #define PORT_FUSER_FUSION_PTRS_USA 0x00001DCCu
 #define PORT_FUSER_FUSION_PTRS_EU 0x00001E74u
+#define PORT_FUSER_FUSION_PTRS_JP PORT_FUSER_FUSION_PTRS_USA
 
 /* The fat binary is compiled with the USA Sprites enum.  Retail EU omits
  * SPRITE_OBJECTB4_1 (USA index 288) from *all three* index-addressed sprite
@@ -205,9 +213,7 @@ extern const RomOffsets* gRomOffsets;
 /* ---- Predefined offset tables ---- */
 extern const RomOffsets kRomOffsets_USA;
 extern const RomOffsets kRomOffsets_EU;
-/* JP table is a placeholder until generated from build/JP/tmc_jp.map — its
- * ROM-derived address fields are 0. Port_DetectRomRegion refuses to run a JP
- * build against it while unpopulated. See docs/JP_PORT_ENABLEMENT.md. */
+/* JP retail offsets also back patch profiles that only replace text/assets. */
 extern const RomOffsets kRomOffsets_JP;
 
 /* Detect region from loaded ROM data and set gRomRegion + gRomOffsets.

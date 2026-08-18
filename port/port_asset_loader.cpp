@@ -10,7 +10,7 @@ extern "C" {
 #include "port_gba_mem.h"
 #include "port_rom.h"
 #include "port_config.h" /* gRomRegion / ROM_REGION_JP for the JP gfx-group gate */
-#include "region.h"      /* RegionAssetSubdir() — per-region cache folder */
+#include "port_rom_profile.h"
 #include "port_asset_index.h"
 #include "structures.h"
 #include "area.h"
@@ -47,6 +47,7 @@ extern Frame* gSpriteAnimations_322[];
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -180,7 +181,39 @@ struct AssetGroupCache {
 };
 
 AssetGroupCache gAssetGroupCache;
+/* Asset data is exposed to the C engine through raw pointers. During a reload
+ * those pointers can still be live until the replacement tables finish
+ * loading, and a failed replacement must not turn them into dangling pointers.
+ * Keep retired generations alive for the process lifetime; reloads are startup
+ * operations, while this bounded-by-reloads retention is safer than freeing
+ * memory behind the engine. */
+std::vector<std::unique_ptr<AssetGroupCache>> gRetiredAssetCaches;
 std::unordered_set<std::string> gAssetLogOnceKeys;
+
+void RetireAssetGroupCache(bool preservePaks) {
+    PortAssetPak::PakSet activePaks;
+    const bool paksEnabled = preservePaks && gAssetGroupCache.paksEnabled;
+    if (preservePaks) {
+        activePaks = std::move(gAssetGroupCache.paks);
+        gAssetGroupCache.paksEnabled = false;
+    }
+
+    const bool explicitMods = gAssetGroupCache.modExplicitSelection;
+    /* Both generations may still perform lazy lookups, so preserve the mod
+     * roots in the retired cache and copy them into the replacement. */
+    std::vector<std::filesystem::path> modRoots = gAssetGroupCache.modRoots;
+    /* When paks are not being transferred to the replacement generation, keep
+     * them mapped in the retired generation. Lazy map lookups can still belong
+     * to old gArea* tables if the replacement scan fails. */
+    gRetiredAssetCaches.push_back(std::make_unique<AssetGroupCache>(std::move(gAssetGroupCache)));
+    gAssetGroupCache = AssetGroupCache{};
+    gAssetGroupCache.modExplicitSelection = explicitMods;
+    gAssetGroupCache.modRoots = std::move(modRoots);
+    if (preservePaks) {
+        gAssetGroupCache.paks = std::move(activePaks);
+        gAssetGroupCache.paksEnabled = paksEnabled;
+    }
+}
 
 std::string PathForLog(const std::filesystem::path& path) {
     return path.generic_string();
@@ -243,22 +276,20 @@ static std::vector<std::filesystem::path> AssetSearchRoots() {
     return roots;
 }
 
-/* The asset cache is keyed per-region: assets/<region>/ and assets_src/<region>/.
- * gActiveRegion is set at ROM load, so RegionAssetSubdir() is valid here. For USA
- * we also accept the legacy FLAT assets/ tree (older installs predating per-region
- * folders) so they aren't forced to re-extract. The flat fallback is USA-only on
- * purpose: a JP/EU run must never silently pick up a flat USA tree — that is the
- * exact cross-region corruption this scheme exists to prevent. */
-static bool RegionAllowsLegacyFlat() {
-    return std::string(RegionAssetSubdir()) == "usa";
+/* The asset cache is keyed per exact ROM profile. This keeps patched ROMs that
+ * share a region and size from reusing each other's extracted data. The USA
+ * retail profile also accepts the legacy flat assets/ tree so existing installs
+ * are not forced to re-extract. */
+static bool ProfileAllowsLegacyFlat() {
+    return std::string(Port_GetAssetCacheSubdir()) == "usa";
 }
 
-/* Shared search for an asset tree: probe <root>/<subdir>/<region> for
+/* Shared search for an asset tree: probe <root>/<subdir>/<profile> for
  * every manifest in `manifests`, then (USA only) the legacy flat
  * <root>/<subdir>. Editable trees live under "assets_src" and require
  * palettes.json too; runtime trees live under "assets". */
 std::optional<std::filesystem::path> FindAssetsRoot(const char* subdir, std::initializer_list<const char*> manifests) {
-    const char* sub = RegionAssetSubdir();
+    const char* sub = Port_GetAssetCacheSubdir();
     const auto hasManifests = [&](const std::filesystem::path& dir) {
         for (const char* m : manifests) {
             if (!std::filesystem::exists(dir / m)) {
@@ -268,11 +299,11 @@ std::optional<std::filesystem::path> FindAssetsRoot(const char* subdir, std::ini
         return true;
     };
     for (const auto& root : AssetSearchRoots()) {
-        const std::filesystem::path regioned = root / subdir / sub;
-        if (hasManifests(regioned)) {
-            return regioned;
+        const std::filesystem::path profiled = root / subdir / sub;
+        if (hasManifests(profiled)) {
+            return profiled;
         }
-        if (RegionAllowsLegacyFlat()) {
+        if (ProfileAllowsLegacyFlat()) {
             const std::filesystem::path legacy = root / subdir;
             if (hasManifests(legacy)) {
                 return legacy;
@@ -290,8 +321,8 @@ std::optional<std::filesystem::path> FindRuntimeAssetsRoot() {
     return FindAssetsRoot("assets", { "gfx_groups.json", "palette_groups.json" });
 }
 
-/* Map an editable root to its runtime sibling, preserving the region subdir:
- *   <root>/assets_src/<region>  ->  <root>/assets/<region>
+/* Map an editable root to its runtime sibling, preserving the profile subdir:
+ *   <root>/assets_src/<profile> ->  <root>/assets/<profile>
  *   <root>/assets_src           ->  <root>/assets           (legacy flat) */
 std::filesystem::path RuntimeRootForEditableRoot(const std::filesystem::path& editableRoot) {
     if (editableRoot.filename() == "assets_src") {
@@ -356,6 +387,7 @@ bool LoadOptionalJson(const std::filesystem::path& path, nlohmann::json& json) {
     return LoadJsonFile(path, json);
 }
 
+const std::vector<u8>* LoadBinaryFileCached(AssetGroupCache& cache, const std::string& relativePath);
 const std::vector<u8>* LoadBinaryFileCached(const std::string& relativePath);
 
 /*
@@ -794,9 +826,9 @@ void ParseTexts(const nlohmann::json& root) {
     }
 }
 
-const std::vector<u8>* LoadBinaryFileCached(const std::string& relativePath) {
-    auto it = gAssetGroupCache.binaryFiles.find(relativePath);
-    if (it != gAssetGroupCache.binaryFiles.end()) {
+const std::vector<u8>* LoadBinaryFileCached(AssetGroupCache& cache, const std::string& relativePath) {
+    auto it = cache.binaryFiles.find(relativePath);
+    if (it != cache.binaryFiles.end()) {
         return it->second.get();
     }
 
@@ -804,14 +836,14 @@ const std::vector<u8>* LoadBinaryFileCached(const std::string& relativePath) {
      * via the pre-scanned modReplacements map) wins over our linear
      * modRoots scan. Combined with our fast-path reader so we don't
      * regress on cold-cache misses on slow storage. */
-    ScanMods();
+    ScanMods(cache);
     const std::string normalizedPath = NormalizeAssetPath(relativePath);
-    auto modIt = gAssetGroupCache.modReplacements.find(normalizedPath);
-    if (modIt != gAssetGroupCache.modReplacements.end()) {
+    auto modIt = cache.modReplacements.find(normalizedPath);
+    if (modIt != cache.modReplacements.end()) {
         auto data = PortAssetLoader_ReadFileFast(modIt->second);
         if (data) {
             const std::vector<u8>* result = data.get();
-            gAssetGroupCache.binaryFiles.emplace(relativePath, std::move(data));
+            cache.binaryFiles.emplace(relativePath, std::move(data));
             AssetLogOnce("mod-file:" + normalizedPath, "mod override %s <- %s", normalizedPath.c_str(),
                          PathForLog(modIt->second).c_str());
             return result;
@@ -826,23 +858,27 @@ const std::vector<u8>* LoadBinaryFileCached(const std::string& relativePath) {
      * expect const std::vector<u8>* and store the pointer for the
      * lifetime of the engine) source-compatible. A future change can
      * thread std::span all the way through. */
-    if (gAssetGroupCache.paksEnabled) {
-        if (auto bytes = gAssetGroupCache.paks.Lookup(relativePath); bytes.has_value()) {
+    if (cache.paksEnabled) {
+        if (auto bytes = cache.paks.Lookup(relativePath); bytes.has_value()) {
             auto data = std::make_unique<std::vector<u8>>(bytes->begin(), bytes->end());
             const std::vector<u8>* result = data.get();
-            gAssetGroupCache.binaryFiles.emplace(relativePath, std::move(data));
+            cache.binaryFiles.emplace(relativePath, std::move(data));
             return result;
         }
     }
 
-    const std::filesystem::path fullPath = gAssetGroupCache.assetsRoot / std::filesystem::path(relativePath);
+    const std::filesystem::path fullPath = cache.assetsRoot / std::filesystem::path(relativePath);
     auto data = PortAssetLoader_ReadFileFast(fullPath);
     if (!data) {
         return nullptr;
     }
     const std::vector<u8>* result = data.get();
-    gAssetGroupCache.binaryFiles.emplace(relativePath, std::move(data));
+    cache.binaryFiles.emplace(relativePath, std::move(data));
     return result;
+}
+
+const std::vector<u8>* LoadBinaryFileCached(const std::string& relativePath) {
+    return LoadBinaryFileCached(gAssetGroupCache, relativePath);
 }
 
 u32 RegisterMapAssetFile(const std::string& relativePath) {
@@ -1090,7 +1126,8 @@ bool EnsureAssetGroupCache() {
     if (editableRoot.has_value()) {
         const std::filesystem::path runtimeRoot = RuntimeRootForEditableRoot(*editableRoot);
         std::string buildInfo;
-        if (!PortAssetPipeline::EnsureRuntimeAssetsBuilt(*editableRoot, runtimeRoot, &buildInfo)) {
+        if (!PortAssetPipeline::EnsureRuntimeAssetsBuilt(*editableRoot, runtimeRoot, &buildInfo,
+                                                         Port_GetTextCodec())) {
             std::fprintf(stderr, "[ASSET] Failed to build runtime assets from %s: %s\n", editableRoot->string().c_str(),
                          buildInfo.c_str());
             return false;
@@ -1211,12 +1248,12 @@ extern "C" void Port_LogAssetLoaderStatus(void) {
  * "EnsureAssetGroupCache failed altogether". */
 extern "C" void Port_DumpAssetEnvironment(FILE* out, const char* kind, unsigned int group) {
     std::fprintf(out, "  --- asset environment ---\n");
-    std::fprintf(out, "  active region: %s (cache subdir: assets/%s)\n",
+    std::fprintf(out, "  active region: %s (profile cache: assets/%s)\n",
                  gRomRegion == ROM_REGION_EU    ? "EU"
                  : gRomRegion == ROM_REGION_JP  ? "JP"
                  : gRomRegion == ROM_REGION_USA ? "USA"
                                                 : "UNKNOWN",
-                 RegionAssetSubdir());
+                 Port_GetAssetCacheSubdir());
 
     std::error_code ec;
     const auto cwd = std::filesystem::current_path(ec);
@@ -1376,15 +1413,17 @@ GfxLoadDecision EvaluateGfxControl(u8 unknown) {
 extern "C" u16 gPaletteBuffer[];
 
 extern "C" bool32 Port_LoadPaletteGroupFromAssets(u32 group) {
-    /* EU: never serve palette GROUPS from the extracted cache. The EU palette
+    /* Non-USA profiles never serve palette GROUPS from the extracted cache.
+     * The EU palette
      * area drops two entries (gPalette_2432/2433) relative to USA, so the
      * extractor's per-NAME file offsets sit +0x10/-0x40 off the id*32
      * arithmetic the game's group table actually uses — group loads for
      * palette ids >= ~2434 come out half-a-palette shifted (magenta/green
      * garbled EU title BG, M6 bug). The loaded ROM resolves groups exactly
      * (gGlobalGfxAndPalettes[paletteId * 32]); let LoadPaletteGroup fall
-     * through to it. Same shape as the JP gfx-group gate below. */
-    if (gRomRegion == ROM_REGION_EU) {
+     * through to it. JP patch profiles also share the JP cache directory, so
+     * accepting cached clean-JP palettes here would overwrite patch data. */
+    if (!Port_ShouldUsePaletteAssetCacheForRegion(gRomRegion)) {
         return FALSE;
     }
     if (!EnsureAssetGroupCache()) {
@@ -1687,9 +1726,12 @@ extern "C" bool32 Port_LoadSpritePtrsFromAssets(void) {
                 }
             }
 
-            const u8* paddedPtr = buf->data();
-            gAssetGroupCache.binaryFiles.emplace(std::move(paddedKey), std::move(buf));
-            animPtrs.push_back(paddedPtr);
+            /* Reload can rebuild the same padded animation key. Replace the
+             * old buffer and take the pointer from the map entry; taking
+             * buf->data() before a failed emplace leaves a dangling pointer
+             * when the temporary buffer is destroyed. */
+            auto stored = gAssetGroupCache.binaryFiles.insert_or_assign(std::move(paddedKey), std::move(buf));
+            animPtrs.push_back(stored.first->second->data());
         }
 
         sprite.animations = animPtrs.empty() ? nullptr : (void*)animPtrs.data();
@@ -1778,13 +1820,73 @@ extern "C" bool32 Port_RefreshAreaDataFromAssets(u32 area) {
     return BuildAreaFromAssets(area) ? TRUE : FALSE;
 }
 
+static bool CacheContainsAreaTablePtr(const AssetGroupCache& cache, u32 area, const void* ptr) {
+    const auto& table = cache.areaTablePtrs[area];
+    return !table.empty() && ptr == table.data();
+}
+
+static bool CacheContainsRoomHeaderPtr(const AssetGroupCache& cache, const RoomHeader* ptr) {
+    for (const auto& roomHeaders : cache.areaRoomHeaders) {
+        if (roomHeaders.empty()) {
+            continue;
+        }
+
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(roomHeaders.data());
+        const uintptr_t end = begin + roomHeaders.size() * sizeof(RoomHeader);
+        const uintptr_t at = reinterpret_cast<uintptr_t>(ptr);
+        if (at >= begin && at <= end && sizeof(RoomHeader) <= end - at) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool CacheContainsAssetBytes(const AssetGroupCache& cache, const void* ptr, u32 size) {
+    const uintptr_t at = reinterpret_cast<uintptr_t>(ptr);
+    for (const auto& [_, dataPtr] : cache.binaryFiles) {
+        if (dataPtr == nullptr || dataPtr->empty()) {
+            continue;
+        }
+
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(dataPtr->data());
+        const uintptr_t end = begin + dataPtr->size();
+        if (at >= begin && at < end && size <= end - at) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const u8* CacheAssetBytesEnd(const AssetGroupCache& cache, const void* ptr) {
+    const uintptr_t at = reinterpret_cast<uintptr_t>(ptr);
+    for (const auto& [_, dataPtr] : cache.binaryFiles) {
+        if (dataPtr == nullptr || dataPtr->empty()) {
+            continue;
+        }
+
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(dataPtr->data());
+        const uintptr_t end = begin + dataPtr->size();
+        if (at >= begin && at < end) {
+            return reinterpret_cast<const u8*>(end);
+        }
+    }
+    return nullptr;
+}
+
 extern "C" bool32 Port_IsAreaTablePtrFromAssets(u32 area, const void* ptr) {
-    if (ptr == nullptr || !EnsureAssetGroupCache() || area >= kAreaCount) {
+    if (ptr == nullptr || area >= kAreaCount) {
         return FALSE;
     }
 
-    const auto& table = gAssetGroupCache.areaTablePtrs[area];
-    return !table.empty() && ptr == table.data() ? TRUE : FALSE;
+    if (EnsureAssetGroupCache() && CacheContainsAreaTablePtr(gAssetGroupCache, area, ptr)) {
+        return TRUE;
+    }
+    for (const auto& retired : gRetiredAssetCaches) {
+        if (retired != nullptr && CacheContainsAreaTablePtr(*retired, area, ptr)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 extern "C" bool32 Port_IsRoomHeaderPtrReadable(const void* ptr) {
@@ -1797,15 +1899,11 @@ extern "C" bool32 Port_IsRoomHeaderPtrReadable(const void* ptr) {
     }
 
     const RoomHeader* roomPtr = static_cast<const RoomHeader*>(ptr);
-
-    for (const auto& roomHeaders : gAssetGroupCache.areaRoomHeaders) {
-        if (roomHeaders.empty()) {
-            continue;
-        }
-
-        const RoomHeader* begin = roomHeaders.data();
-        const RoomHeader* end = begin + roomHeaders.size();
-        if (roomPtr >= begin && roomPtr < end) {
+    if (CacheContainsRoomHeaderPtr(gAssetGroupCache, roomPtr)) {
+        return TRUE;
+    }
+    for (const auto& retired : gRetiredAssetCaches) {
+        if (retired != nullptr && CacheContainsRoomHeaderPtr(*retired, roomPtr)) {
             return TRUE;
         }
     }
@@ -1818,15 +1916,11 @@ extern "C" bool32 Port_IsLoadedAssetBytes(const void* ptr, u32 size) {
         return FALSE;
     }
 
-    for (const auto& [_, dataPtr] : gAssetGroupCache.binaryFiles) {
-        if (dataPtr == nullptr || dataPtr->empty()) {
-            continue;
-        }
-
-        const u8* begin = dataPtr->data();
-        const u8* end = begin + dataPtr->size();
-        const u8* at = static_cast<const u8*>(ptr);
-        if (at >= begin && at <= end && size <= static_cast<u32>(end - at)) {
+    if (CacheContainsAssetBytes(gAssetGroupCache, ptr, size)) {
+        return TRUE;
+    }
+    for (const auto& retired : gRetiredAssetCaches) {
+        if (retired != nullptr && CacheContainsAssetBytes(*retired, ptr, size)) {
             return TRUE;
         }
     }
@@ -1845,36 +1939,52 @@ extern "C" const u8* Port_LoadedAssetBytesEnd(const void* ptr) {
     if (ptr == nullptr) {
         return nullptr;
     }
-    const u8* at = static_cast<const u8*>(ptr);
-    for (const auto& [_, dataPtr] : gAssetGroupCache.binaryFiles) {
-        if (dataPtr == nullptr || dataPtr->empty()) {
-            continue;
-        }
-        const u8* begin = dataPtr->data();
-        const u8* end = begin + dataPtr->size();
-        if (at >= begin && at < end) {
-            return end;
+    if (const u8* end = CacheAssetBytesEnd(gAssetGroupCache, ptr); end != nullptr) {
+        return end;
+    }
+    for (const auto& retired : gRetiredAssetCaches) {
+        if (retired != nullptr) {
+            const u8* end = CacheAssetBytesEnd(*retired, ptr);
+            if (end != nullptr) {
+                return end;
+            }
         }
     }
     return nullptr;
 }
 
 extern "C" const u8* Port_GetMapAssetDataByIndex(u32 assetIndex, u32* size) {
-    if (!EnsureAssetGroupCache() || assetIndex >= gAssetGroupCache.mapAssetFiles.size()) {
-        return nullptr;
+    const auto loadFromCache = [&](AssetGroupCache& source) -> const u8* {
+        if (assetIndex >= source.mapAssetFiles.size()) {
+            return nullptr;
+        }
+        const std::string& relativePath = source.mapAssetFiles[assetIndex];
+        const std::vector<u8>* fileData = LoadBinaryFileCached(source, relativePath);
+        if (fileData == nullptr) {
+            return nullptr;
+        }
+        if (size != nullptr) {
+            *size = static_cast<u32>(fileData->size());
+        }
+        AssetLogOnce("map-asset:" + std::to_string(assetIndex), "map asset %u <- %s", assetIndex,
+                     relativePath.c_str());
+        return fileData->data();
+    };
+
+    if (EnsureAssetGroupCache() && assetIndex < gAssetGroupCache.mapAssetFiles.size()) {
+        if (const u8* data = loadFromCache(gAssetGroupCache); data != nullptr) {
+            return data;
+        }
     }
 
-    const std::vector<u8>* fileData = LoadBinaryFileCached(gAssetGroupCache.mapAssetFiles[assetIndex]);
-    if (fileData == nullptr) {
-        return nullptr;
+    for (auto it = gRetiredAssetCaches.rbegin(); it != gRetiredAssetCaches.rend(); ++it) {
+        if (*it != nullptr) {
+            if (const u8* data = loadFromCache(**it); data != nullptr) {
+                return data;
+            }
+        }
     }
-
-    if (size != nullptr) {
-        *size = static_cast<u32>(fileData->size());
-    }
-    AssetLogOnce("map-asset:" + std::to_string(assetIndex), "map asset %u <- %s", assetIndex,
-                 gAssetGroupCache.mapAssetFiles[assetIndex].c_str());
-    return fileData->data();
+    return nullptr;
 }
 
 extern "C" const u8* Port_GetSpriteAnimationData(u16 spriteIndex, u32 animIndex) {
@@ -1903,6 +2013,20 @@ extern "C" const u8* Port_GetSpriteAnimationData(u16 spriteIndex, u32 animIndex)
         }
     }
 
+    if (gRomRegion == ROM_REGION_USA) {
+        for (auto it = gRetiredAssetCaches.rbegin(); it != gRetiredAssetCaches.rend(); ++it) {
+            const AssetGroupCache* retired = it->get();
+            if (retired == nullptr || !retired->spritePtrsLoaded ||
+                spriteIndex >= retired->spriteAnimationPtrs.size()) {
+                continue;
+            }
+            const auto& anims = retired->spriteAnimationPtrs[spriteIndex];
+            if (animIndex < anims.size()) {
+                return anims[animIndex];
+            }
+        }
+    }
+
     const SpritePtr* spr = Port_GetSpritePtr(spriteIndex);
     if (spr == nullptr || spr->animations == nullptr) {
         return nullptr;
@@ -1926,15 +2050,34 @@ extern "C" int Port_MountAssetPaks(const char* assetsRoot) {
     if (assetsRoot == nullptr || *assetsRoot == '\0') {
         return 0;
     }
+    PortAssetPak::PakSet candidatePaks;
     const std::filesystem::path root(assetsRoot);
-    const std::size_t mounted = gAssetGroupCache.paks.Mount(root);
-    gAssetGroupCache.paksEnabled = mounted > 0;
+    const std::size_t mounted = candidatePaks.Mount(root);
+    if (mounted == 0) {
+        return 0;
+    }
+
+    /* Commit only after the replacement pak set mounted successfully. Keep the
+     * previous generation alive because C-side area/sprite tables may still
+     * contain its raw pointers until the replacement scan completes. */
+    if (gAssetGroupCache.initAttempted || gAssetGroupCache.paksEnabled || !gAssetGroupCache.binaryFiles.empty()) {
+        RetireAssetGroupCache(false);
+    }
+    gAssetGroupCache.paks = std::move(candidatePaks);
+    gAssetGroupCache.paksEnabled = true;
     return static_cast<int>(mounted);
 }
 
 extern "C" void Port_UnmountAssetPaks(void) {
-    gAssetGroupCache.paks.Clear();
-    gAssetGroupCache.paksEnabled = false;
+    if (gAssetGroupCache.paksEnabled) {
+        /* Remove paks from the active generation so subsequent reads prefer
+         * loose files. The retired generation keeps its mapping as a fallback
+         * for old C-side area tables that may still issue lazy map lookups. */
+        RetireAssetGroupCache(false);
+    } else {
+        gAssetGroupCache.paks.Clear();
+        gAssetGroupCache.paksEnabled = false;
+    }
 }
 
 extern "C" bool32 Port_PaksMounted(void) {
@@ -1946,26 +2089,11 @@ extern "C" int Port_PakEntryCount(void) {
 }
 
 extern "C" void Port_AssetLoader_Reload(void) {
-    /* Reset everything except the binary file cache (cheap to refill)
-     * and the pak set (managed independently by Port_MountAssetPaks).
-     * Subsequent EnsureAssetGroupCache calls will re-scan and pick up
-     * assets that were extracted after the first probe. */
-    gAssetGroupCache.initAttempted = false;
-    gAssetGroupCache.ready = false;
-    gAssetGroupCache.spritePtrsLoaded = false;
-    gAssetGroupCache.areaTablesLoaded = false;
-    gAssetGroupCache.textsLoaded = false;
-    gAssetGroupCache.hasSpritePtrData = false;
-    gAssetGroupCache.hasAreaData = false;
-    gAssetGroupCache.hasTextData = false;
-    gAssetGroupCache.assetsRoot.clear();
-    gAssetGroupCache.gfxGroups.clear();
-    gAssetGroupCache.paletteGroups.clear();
-    gAssetGroupCache.spritePtrs.clear();
-    /* The remaining caches (mapAssetFiles, areaRoomHeaders,
-     * areaTileSets, areaRoomMaps, areaTables, areaTiles, etc.) are
-     * rebuilt lazily inside EnsureAssetGroupCache; clearing the
-     * scalar flags above is sufficient to trigger that. */
+    /* Rebuild every cache that can hold pointers into extracted bytes. Keep the
+     * currently mounted pak set in the fresh generation; all other storage is
+     * retired so a failed re-scan still leaves the C engine's old raw pointers
+     * backed by live allocations. */
+    RetireAssetGroupCache(true);
 }
 
 void Port_SetModsExplicitSelection(bool explicitSelection) {

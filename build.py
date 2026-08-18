@@ -39,10 +39,8 @@ VERSIONS = {
         "sha256":       _read_sha1_file("tmc_eu.sha256"),
         "game_version": "EU",
     },
-    # JP is ROM-gated: needs a legal BZMJ baserom (tmc_jp.gba, sha1 in
-    # tmc_jp.sha1) plus the generated port_offset_JP.h. The build will fail
-    # at that missing header until it is generated — see
-    # docs/JP_PORT_ENABLEMENT.md.
+    # JP needs a legal BZMJ baserom (tmc_jp.gba, hashes below) and generated
+    # build/JP asset offset headers. See docs/JP_PORT_ENABLEMENT.md.
     "JP": {
         "rom_filename": "baserom_jp.gba",
         "sha1":         _read_sha1_file("tmc_jp.sha1"),
@@ -572,13 +570,14 @@ def build_version(version: str, env: dict, non_interactive: bool = False,
         # Copy ROM so the standalone asset_extractor can find it next
         # to itself and pre-populate build/pc/assets/ — a convenience
         # for local-dev runs of build/pc/tmc_pc.
-        src = Path("baserom.gba").resolve()
-        dst = Path("build/pc/baserom.gba")
+        rom_filename = VERSIONS[version]["rom_filename"]
+        src = (REPO_ROOT / rom_filename).resolve()
+        dst = REPO_ROOT / "build" / "pc" / "baserom.gba"
         if not dst.exists() or dst.resolve() != src:
-            shutil.copy2("baserom.gba", "build/pc/baserom.gba")
-            print("✓  Copied baserom.gba → build/pc/")
+            shutil.copy2(src, dst)
+            print(f"✓  Copied {rom_filename} → build/pc/baserom.gba")
         else:
-            print("✓  baserom.gba already in build/pc/ (same file)")
+            print(f"✓  {rom_filename} already at build/pc/baserom.gba (same file)")
 
         extractor = REPO_ROOT / "build" / "pc" / (
             "asset_extractor.exe" if PLATFORM == "Windows" else "asset_extractor"
@@ -689,7 +688,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eur", action="store_true", help="Build EU version without prompts")
     parser.add_argument("--jp", action="store_true",
                         help="Build JP version without prompts (ROM-gated; needs a JP baserom "
-                             "and the generated port_offset_JP.h — see docs/JP_PORT_ENABLEMENT.md)")
+                             "and generated JP asset offsets — see docs/JP_PORT_ENABLEMENT.md)")
     parser.add_argument(
         "--slim",
         action="store_true",

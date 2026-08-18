@@ -23,7 +23,7 @@ https://discord.gg/SMW49UMkw
 ## Features
 
 * Native Nintendo 3DS port with full dual-screen support.
-* Supports both USA and European ROMs with automatic region detection.
+* Supports USA, European, clean Japanese, and Angel Team Chinese SP4 ROM profiles with automatic detection.
 * True widescreen gameplay on the 400x240 top screen, plus Original and Stretch display modes.
 * Bottom-screen interface with live map, dungeon information, quest status, touch item controls, and settings.
 * New 3DS enhancements including 804 MHz mode, L2 cache, multi-core rendering, and optional 2x–5x turbo using the C-Stick.
@@ -58,13 +58,17 @@ tmc-3ds-v1.3-E10.cia
 sdmc:/3ds/The Minish Cap 3DS/
 ```
 
-3. Place your legally obtained USA or European `.gba` ROM inside that folder.
+3. Place your legally obtained supported `.gba` ROM inside that folder.
 
 The ROM can have **any filename** as long as it uses the `.gba` extension.
 
 ### Recommended ROM
 
-Both the **USA** and **European** versions are supported, but I **highly recommend using the European ROM**.
+USA, European, and clean Japanese retail ROMs are supported. The exact Angel Team
+Chinese SP4 patch listed below is also supported; other `BZMJ` patches are rejected
+instead of being run with potentially incompatible offsets or text codecs.
+
+For the original upstream experience, the **European ROM** remains the most tested profile.
 
 The European version is the ROM I used throughout the development and testing of this port, so it has received by far the most testing.
 
@@ -72,12 +76,16 @@ The USA version should be compatible, but it behaves slightly differently in som
 
 The European ROM also includes multiple languages, **including English**, so there is generally no disadvantage to using it.
 
-Expected clean ROM SHA-1 values:
+Supported ROM SHA-1 values:
 
 ```text
-USA:    b4bd50e4131b027c334547b4524e2dbbd4227130
-Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7
+USA:       b4bd50e4131b027c334547b4524e2dbbd4227130
+Europe:    cff199b36ff173fb6faf152653d1bccf87c26fb7
+Japan:     6c5404a1effb17f481f352181d0f1c61a2765c5d
+Angel SP4: ba04cfbe93d12d2ad684c52234472fa12a5b53d7
 ```
+
+Clean JP and Angel SP4 use separate save files, save-state files, and extracted asset caches.
 
 The ROM stays on your SD card and is never included in the CIA.
 

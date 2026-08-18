@@ -295,6 +295,9 @@ target("asset_extractor")
     add_files("port/port_asset_log.cpp")
     add_files("port/port_asset_pak.cpp")
     add_files("port/port_asset_index.c")
+    add_files("port/port_rom_hash.c")
+    add_files("port/port_rom_profile.c")
+    add_files("port/port_text_codec.c")
     add_includedirs("tools/src/assets_extractor")
     add_includedirs("include", "port", ".")
     add_packages("nlohmann_json", "fmt")
@@ -545,10 +548,10 @@ target("tmc_pc")
         -- ---- Per-region blob-offset headers (issue #3) ----
         -- src/common.c, src/data/objPalettes.c and friends #include
         -- "assets/map_offsets.h" / "assets/gfx_offsets.h", resolved through
-        -- add_includedirs("build/<game_version>"). Only the USA pair is
-        -- committed (see .gitignore), and they are NOT interchangeable: every
-        -- offset past the first ~30 differs between USA and EU. So building
-        -- --game_version=EU (or JP) on a fresh checkout used to die with a bare
+        -- add_includedirs("build/<game_version>"). The USA and EU pairs are
+        -- tracked; JP must be generated locally from the user's ROM. These
+        -- headers are NOT interchangeable: offsets differ between regions. A
+        -- missing regional pair used to make the build die with a bare
         --     fatal error: 'assets/map_offsets.h' file not found
         -- with no hint that an extraction step was missing. Generate them here
         -- when we can, and otherwise say exactly what to run.
@@ -635,10 +638,10 @@ target("tmc_pc")
     local pc_versions = {
         USA = { region = "USA", language = "ENGLISH" },
         EU  = { region = "EU",  language = "ENGLISH" },
-        -- JP is wired but ROM-gated: building it needs a JP baserom (BZMJ),
-        -- extracted JP assets in build/JP/, and the generated port_offset_JP.h.
-        -- region/language become the JP + JAPANESE defines the decomp's
-        -- #ifdef JP paths expect. See docs/JP_PORT_ENABLEMENT.md.
+        -- JP is wired but ROM-gated: building it needs a JP baserom (BZMJ)
+        -- and extracted JP assets in build/JP/. region/language become the
+        -- JP + JAPANESE defines the decomp's #ifdef JP paths expect. See
+        -- docs/JP_PORT_ENABLEMENT.md.
         JP  = { region = "JP",  language = "JAPANESE" },
     }
     local pc_game_version = get_config("game_version") or "USA"
@@ -837,6 +840,9 @@ target("tmc_pc")
     add_files("port/port_mods.cpp")     -- Tier 1 mod loader: asset overrides from <exe>/mods/
     add_files("port/port_rom.c")        -- ROM loading & symbol resolution
     add_files("port/port_region_data.c") -- USA-compiled data -> active-region data provenance resolver
+    add_files("port/port_rom_hash.c")   -- shared ROM identity hashes
+    add_files("port/port_rom_profile.c") -- exact retail/SP4 runtime profiles
+    add_files("port/port_text_codec.c") -- retail and Angel SP4 text codecs
         -- PC port stubs for undefined symbols
     add_files("port/port_stubs.c")
     add_files("port/stubs_autogen.c")
@@ -1150,6 +1156,42 @@ target("rng_golden_test")
     set_targetdir("build/pc")
     add_includedirs("port")
     add_files("port/port_rng_golden_test.c")
+target_end()
+
+-- ROM identity/profile regression test, including Angel SP4 policy.
+target("rom_profile_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_files("port/port_rom_hash.c")
+    add_files("port/port_rom_profile.c")
+    add_files("port/port_rom_profile_test.c")
+target_end()
+
+-- Retail/Angel SP4 text-prefix decoder regression test.
+target("text_codec_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("port")
+    add_files("port/port_text_codec.c")
+    add_files("port/port_text_codec_test.c")
+target_end()
+
+-- C++ editable-text pipeline regression test. This covers the variable-length
+-- Angel SP4 glyph stream in the same decoder used by asset extraction.
+target("asset_pipeline_test")
+    set_kind("binary")
+    set_languages("cxx20")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_files("port/port_asset_pipeline_test.cpp")
+    add_files("port/port_asset_pipeline.cpp")
+    add_files("port/port_asset_log.cpp")
+    add_files("port/port_text_codec.c")
+    add_packages("nlohmann_json", "fmt")
+    add_mingw_static_cpp_runtime()
 target_end()
 
 

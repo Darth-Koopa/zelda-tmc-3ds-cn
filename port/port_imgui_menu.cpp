@@ -39,6 +39,7 @@ extern "C" int Port_GlslpRuntime_IsActive(void);
 
 #include "port_debug_query.h"
 #include "port_debug_actions.h"
+#include "port_rom_profile.h"
 #include "port_runtime_config.h" /* PortInput enum (PORT_INPUT_*) */
 #include "item_ids.h"            /* ITEM_* / BOTTLE_CHARM_* enum ids (C++-safe split header) */
 #include <cstring>               /* strcmp — group-header breaks in the item toggle list */
@@ -2690,8 +2691,11 @@ static void DrawRibbonRandomizerTab(void) {
 
     const char* src_rom = Port_FindBaseRomPath();
     const char* region_label = "(unknown)";
-    char region[5] = { 0 };
-    if (src_rom) {
+    const PortRomProfile* profile = Port_GetActiveRomProfile();
+    if (profile != nullptr) {
+        region_label = profile->displayName;
+    } else if (src_rom) {
+        char region[5] = { 0 };
         FILE* f = std::fopen(src_rom, "rb");
         if (f) {
             std::fseek(f, 0xAC, SEEK_SET);
@@ -2703,7 +2707,7 @@ static void DrawRibbonRandomizerTab(void) {
                 else if (std::strcmp(region, "BZMP") == 0)
                     region_label = "EU (BZMP)";
                 else if (std::strcmp(region, "BZMJ") == 0)
-                    region_label = "JP (BZMJ) - not supported";
+                    region_label = "JP (BZMJ)";
                 else
                     region_label = region;
             }

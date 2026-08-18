@@ -7,7 +7,7 @@ touching it opens the existing Minish Cap Settings hierarchy.
 
 ## Console Installation
 
-Install the universal CIA:
+Install the CIA built for your ROM family:
 
 ```text
 tmc-3ds-v1.3-E3.cia
@@ -19,14 +19,22 @@ Then create this directory on the SD card:
 sdmc:/3ds/The Minish Cap 3DS/
 ```
 
-Place a legally obtained clean ROM there. Any `.gba` filename is accepted.
-The port detects USA and European game codes at runtime and activates the
-matching internal data profile before boot. Expected SHA-1 values:
+Place a legally obtained supported ROM there. Any `.gba` filename is accepted.
+The port verifies the complete ROM hash and activates the matching data/text
+profile before boot. The default USA-baseline package accepts the original USA
+and Europe ROMs. A `TMC3DS_REGION=JP` package accepts clean Japan and Angel SP4;
+the launcher rejects cross-family ROM/build combinations instead of starting a
+known hybrid configuration. Expected SHA-1 values:
 
 ```text
-USA:    b4bd50e4131b027c334547b4524e2dbbd4227130
-Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7
+USA:       b4bd50e4131b027c334547b4524e2dbbd4227130
+Europe:    cff199b36ff173fb6faf152653d1bccf87c26fb7
+Japan:     6c5404a1effb17f481f352181d0f1c61a2765c5d
+Angel SP4: ba04cfbe93d12d2ad684c52234472fa12a5b53d7
 ```
+
+Only that exact Angel Team Chinese SP4 revision is enabled. Unknown Japanese
+patches fail closed and the startup console prints their SHA-256.
 
 The ROM is read locally from the SD card and is never copied into the CIA.
 
@@ -94,5 +102,19 @@ chmod +x platform/3ds/build.sh
 platform/3ds/build.sh
 ```
 
-The universal packages are written under `build-3ds/game/`. No ROM, extracted
-asset package or save data is included in either package.
+For the JP/SP4 compile-time baseline and a symbol-friendly debug build:
+
+```sh
+xmake f -y --game_version=JP
+xmake build -y asset_processor
+tools/bin/asset_processor extract JP build/JP/assets
+TMC3DS_REGION=JP TMC3DS_BUILD_TYPE=Debug platform/3ds/build.sh
+```
+
+Run the asset processor with clean `baserom_jp.gba` in the repository root.
+It generates `build/JP/assets/map_offsets.h` and `gfx_offsets.h`; these local
+ROM-derived files are not committed. Debug builds use `-Og -g3`, retain frame
+pointers, disable LTO, and write `tmc-3ds.map` beside the ELF.
+
+The region-baseline packages are written under `build-3ds/game/`. No ROM,
+extracted asset package or save data is included in either package.

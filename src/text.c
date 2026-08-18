@@ -13,6 +13,8 @@ extern void UnpackTextNibbles(void*, u8*);
 #ifdef PC_PORT
 #include "port_gba_mem.h"
 #include "port_rom.h"
+#include "port_rom_profile.h"
+#include "port_text_codec.h"
 #include "port_asset_loader.h"
 #include "port_text_variables.h"
 #include <stdio.h>
@@ -380,6 +382,23 @@ u32 GetCharacter(Token* token) {
             case 10:
                 code = 1;
                 break;
+#ifdef PC_PORT
+            case 0xb:
+            case 0xc:
+            case 0xd:
+            case 0xe:
+            case 0xf:
+                {
+                    const u32 prefix = code;
+                    const u32 firstByte = sub_0805EF8C(token);
+                    u32 secondByte = 0;
+                    if (Port_TextGlyphPayloadSize(Port_GetTextCodec(), prefix, firstByte) == 2) {
+                        secondByte = sub_0805EF8C(token);
+                    }
+                    code = Port_TextDecodeGlyph(Port_GetTextCodec(), prefix, firstByte, secondByte);
+                }
+                break;
+#else
             case 0xb:
                 code = sub_0805EF8C(token);
                 code |= 0x400;
@@ -400,6 +419,7 @@ u32 GetCharacter(Token* token) {
                 code = sub_0805EF8C(token);
                 code |= 0x300;
                 break;
+#endif
             default:
                 code += 0x100;
                 break;
@@ -436,6 +456,21 @@ u32* sub_0805F25C(u32 param_1) {
     }
 #endif
 
+#ifdef PC_PORT
+    uVar1 = param_1 >> 8 & 0xf;
+    param_1 = param_1 & 0xff;
+    if (uVar1 <= 1 && 0x7f < param_1 && lang != 0) {
+        param_1 = param_1 - 0x80;
+        uVar1 = 2;
+    }
+    if (uVar1 >= Port_GetGlyphBankCount()) {
+        uVar1 = 0;
+    }
+    if (uVar1 >= Port_GetWideGlyphFirstBank()) {
+        param_1 <<= 1;
+    }
+    return gUnk_08109248[uVar1] + param_1 * 0x10;
+#else
     uVar1 = param_1 >> 8 & 0xf;
     param_1 = param_1 & 0xff;
     switch (uVar1) {
@@ -458,22 +493,10 @@ u32* sub_0805F25C(u32 param_1) {
             break;
     }
     {
-#ifdef PC_PORT
-        /* Bank nibble comes from the text stream (ROM/asset/mod data); the
-         * switch handles banks 0..8 and gUnk_08109248 has exactly 9 host
-         * entries. GBA read adjacent ROM for 9..15; on PC that's a garbage
-         * host pointer — clamp to bank 0. */
-        u32* result;
-        if (uVar1 >= 9) {
-            uVar1 = 0;
-        }
-        result = gUnk_08109248[uVar1] + param_1 * 0x10;
-        return result;
-#else
         u32* result = gUnk_08109248[uVar1] + param_1 * 0x10;
         return result;
-#endif
     }
+#endif
 }
 
 WStruct* sub_0805F2C8(void) {
@@ -541,13 +564,22 @@ u32 GetFontStrWith(Token* param_1, u32 param_2) {
                 default:
                     if (uVar5 == 0) {
                         puVar2 = (u32*)sub_0805F25C(character);
+#ifdef PC_PORT
+                        if (((character >> 8) & 0xFu) >= Port_GetWideGlyphFirstBank()) {
+#else
                         if (4 < character >> 8) {
+#endif
                             uVar3 = sub_0805F7A0(puVar2[0x10]);
                             uVar4 += (uVar3 >> 8);
                         }
                         uVar3 = sub_0805F7A0(*puVar2);
                         uVar4 += (uVar3 >> 8);
-                    } else if (character >> 8 >= 5) {
+                    }
+#ifdef PC_PORT
+                    else if (((character >> 8) & 0xFu) >= Port_GetWideGlyphFirstBank()) {
+#else
+                    else if (character >> 8 >= 5) {
+#endif
                         uVar4 += 0x10;
                     } else {
                         uVar4 += 8;
@@ -828,7 +860,11 @@ u32 sub_0805F7DC(u32 r0, WStruct* r1) {
 
     offset = sub_0805F25C(r0);
     temp = r1->unk6;
+#ifdef PC_PORT
+    if (((r0 >> 8) & 0xFu) >= Port_GetWideGlyphFirstBank()) {
+#else
     if ((r0 >> 8) > 4) {
+#endif
         sub_0805F820(r1, offset);
         offset += 0x10;
     }

@@ -50,8 +50,9 @@
 #include "main.h"
 #include "entity.h"
 #include "port_gba_mem.h"
+#include "port_rom_profile.h"
 #include "port_runtime_config.h"
-#include "region.h" /* REGION_IS_EU/JP — per-region savestate isolation (#21) */
+#include "region.h" /* REGION_IS_EU/JP — base region for savestate isolation (#21) */
 
 extern u8 gEwram[];
 extern u8 gIwram[];
@@ -112,9 +113,8 @@ static StateRegion sRegions[] = {
         * state round-trips (GBA had it in IWRAM).      \
         * v4: gPracticeFrame added so speedrun IGT      \
         * timer rewinds with state.                     \
-        * v5: ROM region tag — USA state restored     \
-        * into a JP session contaminates tmc_jp.sav     \
-        * (#21); cross-region loads are refused.        \
+        * v5: ROM profile/region tag — incompatible     \
+        * cross-profile loads are refused (#21).        \
         * v6: entity subclass layouts changed; older    \
         * snapshots are rejected. */
 
@@ -365,10 +365,12 @@ static int QuickSaveReplayTestTick(void) {
     return 1;
 }
 
-/* Region tag for the state header + per-region state filenames. EU/JP get
- * their own state files (like tmc_eu.sav / tmc_jp.sav) so sessions never
- * even see another region's states; USA keeps the legacy names. */
-static u32 ActiveRegionTag(void) {
+/* Profile tag for the state header + state filenames. Clean retail profiles
+ * retain their legacy region names/tags; Angel SP4 gets a distinct namespace
+ * because its text/font state is not interchangeable with clean JP. */
+static u32 ActiveProfileTag(void) {
+    if (Port_GetRomVariant() == PORT_ROM_VARIANT_JP_ANGEL_SP4)
+        return 4;
     if (REGION_IS_EU)
         return 2;
     if (REGION_IS_JP)
@@ -377,7 +379,9 @@ static u32 ActiveRegionTag(void) {
 }
 
 static void SlotFilename(int slot, char* out, size_t cap) {
-    const char* prefix = REGION_IS_EU ? "state_eu" : REGION_IS_JP ? "state_jp" : "state";
+    const char* prefix = Port_GetRomVariant() == PORT_ROM_VARIANT_JP_ANGEL_SP4
+                             ? "state_jp_angel_sp4"
+                             : REGION_IS_EU ? "state_eu" : REGION_IS_JP ? "state_jp" : "state";
     if (slot >= AUTO_SLOT_BASE) {
         snprintf(out, cap, "%s_auto_%d.bin", prefix, slot - AUTO_SLOT_BASE);
     } else if (slot == 0) {
@@ -412,7 +416,7 @@ static int WriteSlotToDisk(int slot) {
      * them and running the entity-update loop dereferences unmapped
      * memory. */
     const u64 entities_base = (u64)(uintptr_t)gEntities;
-    const u32 region_tag = ActiveRegionTag();
+    const u32 region_tag = ActiveProfileTag();
     if (fwrite(&magic, sizeof(magic), 1, f) != 1 || fwrite(&version, sizeof(version), 1, f) != 1 ||
         fwrite(&total, sizeof(total), 1, f) != 1 || fwrite(&saved_at, sizeof(saved_at), 1, f) != 1 ||
         fwrite(&entities_base, sizeof(entities_base), 1, f) != 1 ||
@@ -489,9 +493,9 @@ static int ReadSlotFromDisk(int slot) {
             fclose(f);
             return 0;
         }
-        if (region_tag != ActiveRegionTag()) {
-            fprintf(stderr, "[quicksave] %s was saved in a different ROM region (%u != %u) — refusing load\n", path,
-                    region_tag, ActiveRegionTag());
+        if (region_tag != ActiveProfileTag()) {
+            fprintf(stderr, "[quicksave] %s was saved for a different ROM profile (%u != %u) — refusing load\n",
+                    path, region_tag, ActiveProfileTag());
             fclose(f);
             return 0;
         }

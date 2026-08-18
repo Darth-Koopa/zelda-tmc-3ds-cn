@@ -41,6 +41,7 @@
 #include "port_types.h"
 #include "port_save.h"
 #include "region.h"
+#include "port_rom_profile.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -898,9 +899,9 @@ static int IsManagedProfilePath(const char* path);
 
 /* ---- Persistence -------------------------------------------------------- */
 
-#ifdef MULTI_REGION
 /*
- * Region-isolated saves (M5). The fat binary plays USA/EU/JP from one executable;
+ * Variant/region-isolated saves. Angel SP4 always gets its own namespace, even
+ * in a single-region JP build. A fat binary also plays USA/EU/JP from one executable;
  * each region's in-game save signature differs ("ZELDA 5" USA vs "ZELDA 3" EU/JP),
  * so a shared save file makes InitSaveData wipe the other region's data on load.
  * Give each region its own default store so switching ROMs never wipes or corrupts:
@@ -911,30 +912,46 @@ static int IsManagedProfilePath(const char* path);
  * Resolved lazily here because the active region is only known after Port_LoadRom,
  * which runs after the startup Port_Save_SetActivePath() call.
  */
-static void ResolveRegionDefaultPath(void) {
+static void ResolveRuntimeDefaultPath(void) {
     const char* name;
     extern bool Port_Config_GetRandoEnabled(void);
     if (sExplicitProfile) {
         return;
     }
-    if (REGION_IS_EU) {
+    if (Port_GetRomVariant() == PORT_ROM_VARIANT_JP_ANGEL_SP4) {
+        name = Port_Config_GetRandoEnabled() ? "tmc_jp_angel_sp4_rando.sav" : Port_GetVariantSaveFilename();
+    }
+#ifdef MULTI_REGION
+    else if (REGION_IS_EU) {
         name = Port_Config_GetRandoEnabled() ? "tmc_eu_rando.sav" : "tmc_eu.sav";
     } else if (REGION_IS_JP) {
         name = Port_Config_GetRandoEnabled() ? "tmc_jp_rando.sav" : "tmc_jp.sav";
     } else {
         name = Port_Config_GetRandoEnabled() ? "tmc_rando.sav" : DEFAULT_SAVE_FILENAME;
     }
+#else
+#if defined(EU)
+    else if (REGION_IS_EU) {
+        name = Port_Config_GetRandoEnabled() ? "tmc_eu_rando.sav" : "tmc_eu.sav";
+    }
+#elif defined(JP)
+    else if (REGION_IS_JP) {
+        name = Port_Config_GetRandoEnabled() ? "tmc_jp_rando.sav" : "tmc_jp.sav";
+    }
+#else
+    else {
+        return;
+    }
+#endif
+#endif
     snprintf(sActivePath, sizeof(sActivePath), "%s", name);
 }
-#endif
 
 static void LoadEepromFile(void) {
     EepromImageClass imageClass;
     int legacyRamOrder = 0;
     FILE* probe;
-#ifdef MULTI_REGION
-    ResolveRegionDefaultPath();
-#endif
+    ResolveRuntimeDefaultPath();
 #ifdef TMC_3DS
     if (RecoverInterruptedAtomicWrite(sActivePath) == RECOVERY_BLOCKED) {
         memset(sEeprom, 0xFF, EEPROM_SIZE);
@@ -1280,8 +1297,8 @@ int Port_Save_SetActivePath(const char* path) {
     strncpy(sActivePath, path, sizeof(sActivePath) - 1);
     sActivePath[sizeof(sActivePath) - 1] = '\0';
     /* A named profile (anything other than the default tmc.sav) is the user's
-     * explicit, region-agnostic choice; the multi-region per-region default
-     * (ResolveRegionDefaultPath) must not override it. */
+     * explicit, region-agnostic choice; the runtime variant/region default
+     * must not override it. */
     sExplicitProfile = (strcmp(path, DEFAULT_SAVE_FILENAME) != 0);
     /* Force a reload on next access so any read after this point hits
      * the new file. A profile may have been replaced while it was inactive,
@@ -1306,9 +1323,7 @@ const char* Port_Save_GetActivePath(void) {
  * normal/randomized state across the boundary. ROM files are never touched. */
 int Port_Save_ClearActiveProfileData(void) {
     extern int Port_QuickSave_ClearAll(void);
-#ifdef MULTI_REGION
-    ResolveRegionDefaultPath();
-#endif
+    ResolveRuntimeDefaultPath();
     char temp[SAVE_AUX_PATH_MAX];
     char rollback[SAVE_AUX_PATH_MAX];
     char backup[SAVE_AUX_PATH_MAX];

@@ -104,7 +104,13 @@ README implies.
   save-states is unreliable; only from-boot runs reproduce console RNG. **Fix is ~4 bytes:** add `gRand`
   to `sRegions[]`.
 
-### 2. Region targeting — **USA-default; JP not buildable**
+### 2. Region targeting — **historical 2026-06-13 finding**
+
+> Current status (2026-08-18): this finding is resolved. The tree now has exact
+> clean-JP and Angel SP4 profiles, populated JP runtime offsets, Japanese/SP4
+> text handling, and fail-closed revision detection. The bullets below preserve
+> the original audit baseline.
+
 - Runtime supports **USA (BZME) and EU (BZMP)** only, auto-detected from ROM byte `0xAC`
   (`port/port_rom.c:441-459`). Build defaults to USA (`xmake.lua:18`).
 - **DIVERGENCE (high):** **JP is not buildable as a PC binary** — `pc_versions` has only USA/EU and
@@ -199,7 +205,7 @@ README implies.
 |---|-----|---------|-------|------------------|
 | 1 | High | `.logic` engine & glitched-vs-glitchless reachability tier described in the rando README don't exist; logic is the native graph + a strict glitchless verifier | `port/rando/rando_logic.cpp` (stub), `rando.cpp:793` | Decide: implement glitch edges/tiers, or correct `port/rando/README.md` to match the native-graph reality |
 | 2 | High | No regression test on the engine `Random()`/`gRand` stream | `port/port_linked_stubs.c:832-836` | Add a golden-vector unit test (known seed → fixed output vector) to CI |
-| 3 | High | JP not buildable; `--game_version=JP` silently yields a USA binary | `xmake.lua:685-693` | Either add JP region support (offsets table + `ROM_REGION_JP`) or hard-error on unsupported regions |
+| 3 | High | **Historical:** JP was not buildable; `--game_version=JP` silently yielded a USA binary | `xmake.lua` (fixed 2026-08-18) | Resolved with exact clean-JP/SP4 profiles, JP offsets/codecs, and fail-closed revision detection; keep the regression tests and hardware QA current |
 | 4 | Med | `shuffle_kinstones` is a proxy for entrance shuffle (mislabeled, logic-affecting) | `rando.cpp:644` | Add a dedicated `shuffle_entrances` setting; decouple |
 | 5 | Med | QuickSave doesn't restore `gRand` → save-state RNG practice diverges from console | `port/port_quicksave.c:73-85` | Add `gRand` (4 bytes) to `sRegions[]` |
 | 6 | Med | Widescreen ON widens on-screen culling → off-screen AI advances PRNG early | `port/port_draw.c:593`, `port_linked_stubs.c:1950` | Document "widescreen OFF for manip parity"; or gate culling width behind a determinism flag |
@@ -216,7 +222,7 @@ speedrun-critical Part C items. Implemented in this repo:
 | Part C # | Status | What landed |
 |---|---|---|
 | 2 (RNG golden test in CI) | **DONE** | `port_rng_golden_test.c` now runs on every Linux CI build via a dependency-free `cc` step (`.github/workflows/_build.yaml`); a one-char PRNG-constant edit fails CI. Verified locally: `RNG GOLDEN VECTOR OK`. |
-| 3 (JP buildable / hard-error) | **DONE (boots + core-correct)** | JP fully wired AND a JP build boots against the retail JP ROM with all data tables resolving (verified: `JP (BZMJ)` detected, JP offsets, 2-level area pointers resolved, `AgbMain` entered, no crash). `kRomOffsets_JP` derived from the retail USA+JP ROMs by content-anchoring (this tree's decomp build is non-matching, so its map is unusable). Unknown `--game_version` now **warns** instead of silently building USA. Remaining for JP speedrun parity: Japanese text rendering + JP script-address tables (`port_scripts.h`, `port_script_funcs.c`). See `docs/JP_PORT_ENABLEMENT.md`. |
+| 3 (JP buildable / hard-error) | **DONE; hardware QA pending** | JP is fully wired with exact clean-JP and Angel SP4 hash profiles, populated gameplay offsets, JP script tables, and retail/SP4 text codecs. Unknown revisions now fail closed. Both supplied ROMs pass host-side hash, structure, bounds, pointer-table, and complete SP4-corpus validation; a fresh 3DS build and device gameplay/rendering pass remain pending. See `docs/JP_PORT_ENABLEMENT.md`. |
 | 6 (widescreen RNG desync) | **DONE** | Console-Parity forces `Port_Config_WidescreenEnabled()` to return false, neutralizing the off-screen-AI cull-width advance. |
 | 7 (region mismatch only warns) | **DONE** | Mismatch is now **fatal under `--console-parity`** (a parity run can't execute a version-mismatched hybrid); still a loud warning otherwise. |
 | 8 (console-parity input toggle) | **DONE** | New **Console-Parity mode** (`--console-parity`, `config.json` `console_parity`, imgui toggle) disables the sub-frame input edge cache. |

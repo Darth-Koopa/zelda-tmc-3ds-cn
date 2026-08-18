@@ -358,7 +358,8 @@ bool LookupTextByte(const std::string& token, uint8_t& value) {
     return true;
 }
 
-bool DecodeTextCommand(const uint8_t*& cursor, const uint8_t* end, std::string& text, std::string* error) {
+bool DecodeTextCommand(const uint8_t*& cursor, const uint8_t* end, std::string& text, std::string* error,
+                       PortTextCodec codec) {
     const uint8_t opcode = *cursor++;
     auto need = [&](size_t bytes) -> bool {
         if (static_cast<size_t>(end - cursor) < bytes) {
@@ -367,6 +368,32 @@ bool DecodeTextCommand(const uint8_t*& cursor, const uint8_t* end, std::string& 
         }
         return true;
     };
+
+    /* 0x0B..0x0F are glyph prefixes in the game stream, not ordinary
+     * control commands. Angel SP4 extends 0x0F with a second payload byte for
+     * banks 9..15; preserve that extra byte in the editable token so a
+     * decode/encode round trip cannot silently shift the rest of the message. */
+    if (codec == PORT_TEXT_CODEC_ANGEL_SP4 && opcode >= 0x0Bu && opcode <= 0x0Fu) {
+        if (!need(1)) {
+            return false;
+        }
+        const uint8_t first = *cursor++;
+        const uint32_t payloadSize = Port_TextGlyphPayloadSize(codec, opcode, first);
+        uint8_t second = 0;
+        if (payloadSize == 2u) {
+            if (!need(1)) {
+                return false;
+            }
+            second = *cursor++;
+        }
+
+        text += "{" + HexByteString(opcode) + ":" + HexByteString(first);
+        if (payloadSize == 2u) {
+            text += ":" + HexByteString(second);
+        }
+        text += "}";
+        return true;
+    }
 
     switch (opcode) {
         case 0x01: {
@@ -493,8 +520,18 @@ bool DecodeTextCommand(const uint8_t*& cursor, const uint8_t* end, std::string& 
     }
 }
 
-bool EncodeNamedTextCommand(const std::vector<std::string>& parts, std::vector<uint8_t>& textData, std::string* error) {
+bool EncodeNamedTextCommand(const std::vector<std::string>& parts, std::vector<uint8_t>& textData, std::string* error,
+                            PortTextCodec codec) {
     const std::string& command = parts[0];
+
+    /* In Angel SP4, 0x0C and 0x0F are glyph prefixes rather than the retail
+     * Key/Symbol control commands. Keep the named forms from silently
+     * producing a byte stream that the SP4 runtime would decode differently;
+     * callers can use the explicit {0C:..}/{0F:..} form instead. */
+    if (codec == PORT_TEXT_CODEC_ANGEL_SP4 && (command == "Key" || command == "Symbol")) {
+        SetError(error, command + " is not a control command in Angel SP4; use an explicit glyph token.");
+        return false;
+    }
 
     if (command == "Player") {
         if (parts.size() != 1) {
@@ -661,6 +698,12 @@ bool ParseLegacyEditableTextString(const std::string& value, std::vector<uint8_t
                 case '<':
                     textData.push_back('<');
                     break;
+                case '{':
+                    textData.push_back('{');
+                    break;
+                case '}':
+                    textData.push_back('}');
+                    break;
                 default:
                     SetError(error, "Unsupported escape in editable text.");
                     return false;
@@ -684,10 +727,10 @@ bool ParseLegacyEditableTextString(const std::string& value, std::vector<uint8_t
     return true;
 }
 
-std::string FormatEditableText(const std::vector<uint8_t>& textData) {
+std::string FormatEditableText(const std::vector<uint8_t>& textData, PortTextCodec codec) {
     std::string decoded;
     std::string error;
-    if (PortAssetPipeline::DecodeTmcText(textData.data(), textData.size(), decoded, nullptr, &error)) {
+    if (PortAssetPipeline::DecodeTmcText(textData.data(), textData.size(), decoded, nullptr, &error, codec)) {
         return decoded;
     }
 
@@ -701,8 +744,14 @@ std::string FormatEditableText(const std::vector<uint8_t>& textData) {
     return fallback.str();
 }
 
-bool ParseEditableTextString(const std::string& value, std::vector<uint8_t>& textData, std::string* error) {
-    if (PortAssetPipeline::EncodeTmcText(value, textData, error)) {
+bool ParseEditableTextString(const std::string& value, std::vector<uint8_t>& textData, std::string* error,
+                             PortTextCodec codec) {
+    if (codec == PORT_TEXT_CODEC_ANGEL_SP4 &&
+        (value.find("{Key:") != std::string::npos || value.find("{Symbol:") != std::string::npos)) {
+        SetError(error, "Key/Symbol commands are not valid in Angel SP4 text; use explicit glyph tokens.");
+        return false;
+    }
+    if (PortAssetPipeline::EncodeTmcText(value, textData, error, codec)) {
         return true;
     }
     return ParseLegacyEditableTextString(value, textData, error);
@@ -1011,7 +1060,8 @@ bool BuildRuntimeGfxFiles(const std::filesystem::path& sourceRoot, const std::fi
 }
 
 bool BuildRuntimeTexts(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
-                       const nlohmann::json& sourceTexts, nlohmann::json& runtimeTexts, std::string* error) {
+                       const nlohmann::json& sourceTexts, nlohmann::json& runtimeTexts, std::string* error,
+                       PortTextCodec textCodec = PORT_TEXT_CODEC_RETAIL) {
     runtimeTexts = nlohmann::json::object();
 
     std::error_code ec;
@@ -1117,7 +1167,7 @@ bool BuildRuntimeTexts(const std::filesystem::path& sourceRoot, const std::files
                 auto compiled = compiledTexts.find(sourceFile);
                 if (compiled == compiledTexts.end()) {
                     std::vector<uint8_t> textData;
-                    if (!ReadEditableText(sourceRoot / sourceFile, textData, error)) {
+                    if (!ReadEditableText(sourceRoot / sourceFile, textData, error, textCodec)) {
                         SetError(error,
                                  "Failed to build runtime text from " + sourceFile + ": " + (error ? *error : ""));
                         return false;
@@ -1132,7 +1182,7 @@ bool BuildRuntimeTexts(const std::filesystem::path& sourceRoot, const std::files
                     CompiledTextFile fileInfo;
                     fileInfo.runtimeFile = runtimeRelativeFile.generic_string();
                     fileInfo.size = textData.size();
-                    fileInfo.preview = FormatEditableText(textData);
+                    fileInfo.preview = FormatEditableText(textData, textCodec);
                     compiled = compiledTexts.emplace(sourceFile, std::move(fileInfo)).first;
                 }
 
@@ -1740,7 +1790,7 @@ bool ReadPaletteJson(const std::filesystem::path& inputPath, std::vector<uint8_t
 }
 
 bool DecodeTmcText(const uint8_t* textData, size_t maxBytes, std::string& text, size_t* consumedBytes,
-                   std::string* error) {
+                   std::string* error, PortTextCodec codec) {
     text.clear();
     if (textData == nullptr) {
         SetError(error, "Text buffer is null.");
@@ -1759,14 +1809,32 @@ bool DecodeTmcText(const uint8_t* textData, size_t maxBytes, std::string& text, 
             return true;
         }
 
+        /* Angel SP4 uses 0x0B..0x0F as glyph prefixes. Check them before the
+         * printable/control lookup: the legacy table contains 0x0D as a CR
+         * convenience byte, but in an SP4 message 0x0D is a glyph prefix and
+         * its following payload must be consumed here. Retail keeps the
+         * historical command decoder and output format. */
+        if (codec == PORT_TEXT_CODEC_ANGEL_SP4 && byte >= 0x0Bu && byte <= 0x0Fu) {
+            if (!DecodeTextCommand(cursor, end, text, error, codec)) {
+                return false;
+            }
+            continue;
+        }
+
         if (const char* mapped = LookupTextChar(byte); mapped != nullptr) {
+            /* Braces delimit symbolic commands and backslash escapes literal
+             * delimiters. Escape all three when they came from ROM text so
+             * DecodeTmcText -> EncodeTmcText remains unambiguous. */
+            if (byte == '\\' || byte == '{' || byte == '}') {
+                text += '\\';
+            }
             text += mapped;
             ++cursor;
             continue;
         }
 
         if (byte < 0x20) {
-            if (!DecodeTextCommand(cursor, end, text, error)) {
+            if (!DecodeTextCommand(cursor, end, text, error, codec)) {
                 return false;
             }
             continue;
@@ -1782,10 +1850,26 @@ bool DecodeTmcText(const uint8_t* textData, size_t maxBytes, std::string& text, 
     return false;
 }
 
-bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std::string* error) {
+bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std::string* error, PortTextCodec codec) {
     textData.clear();
 
     for (size_t i = 0; i < text.size();) {
+        if (text[i] == '\\') {
+            if (i + 1 < text.size() &&
+                (text[i + 1] == '\\' || text[i + 1] == '{' || text[i + 1] == '}' || text[i + 1] == '<')) {
+                textData.push_back(static_cast<uint8_t>(text[i + 1]));
+                i += 2;
+                continue;
+            }
+
+            /* Older editable files emitted literal backslashes without an
+             * escape layer. Preserve that interpretation when the following
+             * character is not one of the command delimiters above. */
+            textData.push_back('\\');
+            ++i;
+            continue;
+        }
+
         if (text[i] == '{') {
             const size_t close = text.find('}', i + 1);
             if (close == std::string::npos) {
@@ -1795,7 +1879,7 @@ bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std:
 
             const std::string content = text.substr(i + 1, close - (i + 1));
             const std::vector<std::string> parts = SplitTextCommand(content);
-            if (!EncodeNamedTextCommand(parts, textData, error) && !EncodeGenericTextCommand(parts, textData, error)) {
+            if (!EncodeNamedTextCommand(parts, textData, error, codec) && !EncodeGenericTextCommand(parts, textData, error)) {
                 return false;
             }
             i = close + 1;
@@ -1820,14 +1904,15 @@ bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std:
 }
 
 bool WriteEditableText(const std::filesystem::path& outputPath, const std::vector<uint8_t>& textData,
-                       std::string* error) {
+                       std::string* error, PortTextCodec codec) {
     nlohmann::json root;
     root["format"] = kTextFormat;
-    root["text"] = FormatEditableText(textData);
+    root["text"] = FormatEditableText(textData, codec);
     return WriteJsonFile(outputPath, root, error);
 }
 
-bool ReadEditableText(const std::filesystem::path& inputPath, std::vector<uint8_t>& textData, std::string* error) {
+bool ReadEditableText(const std::filesystem::path& inputPath, std::vector<uint8_t>& textData, std::string* error,
+                      PortTextCodec codec) {
     nlohmann::json root;
     if (!LoadJsonFile(inputPath, root, error)) {
         return false;
@@ -1838,7 +1923,7 @@ bool ReadEditableText(const std::filesystem::path& inputPath, std::vector<uint8_
         return false;
     }
 
-    if (!ParseEditableTextString(root["text"].get<std::string>(), textData, error)) {
+    if (!ParseEditableTextString(root["text"].get<std::string>(), textData, error, codec)) {
         if (error != nullptr && !error->empty()) {
             *error += " in " + inputPath.string();
         }
@@ -2053,7 +2138,7 @@ bool RuntimeAssetsNeedRebuild(const std::filesystem::path& sourceRoot, const std
 }
 
 bool BuildRuntimeAssets(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
-                        std::string* error) {
+                        std::string* error, PortTextCodec textCodec) {
     nlohmann::json sourceGfxGroups;
     nlohmann::json sourcePalettes;
     nlohmann::json sourcePaletteGroups;
@@ -2085,7 +2170,7 @@ bool BuildRuntimeAssets(const std::filesystem::path& sourceRoot, const std::file
     if (!BuildRuntimeGfxFiles(sourceRoot, outputRoot, sourceGfxGroups, runtimeGfxGroups, error)) {
         return false;
     }
-    if (!BuildRuntimeTexts(sourceRoot, outputRoot, sourceTexts, runtimeTexts, error)) {
+    if (!BuildRuntimeTexts(sourceRoot, outputRoot, sourceTexts, runtimeTexts, error, textCodec)) {
         return false;
     }
     if (!BuildRuntimeSpritePtrs(sourceRoot, outputRoot, sourceSpritePtrs, runtimeSpritePtrs, error)) {
@@ -2128,13 +2213,13 @@ bool WriteBuildStateFile(const std::filesystem::path& sourceRoot, const std::fil
 }
 
 bool EnsureRuntimeAssetsBuilt(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
-                              std::string* reasonOrError) {
+                              std::string* reasonOrError, PortTextCodec textCodec) {
     std::string reason;
     if (!RuntimeAssetsNeedRebuild(sourceRoot, outputRoot, &reason)) {
         return true;
     }
 
-    if (!BuildRuntimeAssets(sourceRoot, outputRoot, reasonOrError)) {
+    if (!BuildRuntimeAssets(sourceRoot, outputRoot, reasonOrError, textCodec)) {
         if (reasonOrError != nullptr && reasonOrError->empty()) {
             *reasonOrError = reason;
         }

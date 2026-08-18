@@ -1,8 +1,15 @@
-# M8 design — cross-region flag-ordinal remap (save portability)
+# Historical M8 design — cross-region flag-ordinal remap
 
-Status: **design, not yet implemented.** Unblocks M8 in `docs/MULTI_REGION.md`.
-M5 (region-isolated saves) already prevents cross-region *wipes*; this is what a single
-save needs to *load and play correctly under any ROM*.
+Status: **superseded by the implemented same-region remap.** The current code
+generates baseline-to-EU/JP tables in `port/flag_remap_generated.c` and routes
+compiled C references through the `*B` helpers in `src/flags.c`. ROM/script
+references remain in the loaded region's native ordinal space. This fixes
+same-region consistency while M5 keeps saves isolated.
+
+The proposal below is retained as design history. Its canonical-save approach
+was not adopted, so cross-region save portability is still not implemented; it
+would require an explicit versioned save converter rather than the runtime
+remap alone. See `docs/MULTI_REGION.md`.
 
 ## The problem (recap)
 

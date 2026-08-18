@@ -251,14 +251,14 @@ xmake rom            # uses tools/agbcc + arm-none-eabi binutils
 ```
 
 This requires `arm-none-eabi-gcc`/`as`/`ld`/`objcopy` (or DEVKITARM) and
-`tools/agbcc/bin/agbcc`; the task errors out early if either is missing
-(`xmake.lua:1152-1195`). It extracts assets if needed, generates enum includes,
+`tools/agbcc/bin/agbcc`; the `xmake rom` task errors out early if either is
+missing. It extracts assets if needed, generates enum includes,
 preprocesses `linker.ld`, compiles `src/**.c` with agbcc, assembles
 `asm/**.s` + `data/**.s`, links via `linker.ld`, and `objcopy`s to `.gba`.
 
-A ROM is required at the repo root for asset extraction / full runtime (USA
-`baserom.gba`, SHA1 `b4bd50e4131b027c334547b4524e2dbbd4227130`; see
-`CONTRIBUTING.md`).
+A matching ROM is required at the repo root for asset extraction / full runtime:
+`baserom.gba` (USA), `baserom_eu.gba` (EU), or `baserom_jp.gba` (clean JP),
+according to `--game_version`; see `INSTALL.md` for hashes.
 
 ---
 

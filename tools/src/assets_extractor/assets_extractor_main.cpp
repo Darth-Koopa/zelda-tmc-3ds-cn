@@ -1,11 +1,12 @@
 #include "assets_extractor_api.hpp"
 #include "port_asset_log.hpp"
+#include "port_rom_profile.h"
 #include "global.h"
 
 #include <fmt/format.h>
 
 #include <cstddef>
-#include <cstring>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,23 +22,21 @@ u32 gRomSize = 0;
 extern "C" const unsigned char kEmbeddedSoundsJson[];
 extern "C" const std::size_t kEmbeddedSoundsJsonSize;
 
-/* Per-region cache subdir (assets/<sub>/), matching RegionAssetSubdir() in the
- * engine. The standalone binary links no engine globals, so it derives the region
- * from the ROM's GBA game code at header offset 0xAC: BZME=USA, BZMP=EU, BZMJ=JP. */
-static std::string DetectRegionSubdir(const std::filesystem::path& rom_path)
+/* Profile-keyed cache subdir (assets/<sub>/), matching the runtime loader. The
+ * standalone binary has no loaded engine profile, so identify the ROM from disk
+ * before selecting an output directory. */
+static std::string DetectProfileSubdir(const std::filesystem::path& rom_path, PortRomHashes* hashes_out)
 {
-    std::ifstream f(rom_path, std::ios::binary);
-    if (!f) {
-        return "usa";
+    PortRomHashes hashes = {};
+    const PortRomProfile* profile = Port_IdentifyRomFile(rom_path.string().c_str(), &hashes);
+    if (hashes_out != nullptr) {
+        *hashes_out = hashes;
     }
-    char code[4] = {0, 0, 0, 0};
-    f.seekg(0xAC);
-    f.read(code, sizeof(code));
-    if (f.gcount() == 4) {
-        if (std::memcmp(code, "BZMP", 4) == 0) return "eu";
-        if (std::memcmp(code, "BZMJ", 4) == 0) return "jp";
+    if (profile != nullptr) {
+        Port_SetActiveRomProfile(profile);
+        return Port_GetAssetCacheSubdir();
     }
-    return "usa";  /* BZME + unknown/default */
+    return {};
 }
 
 int main(int argc, char* argv[])
@@ -46,7 +45,7 @@ int main(int argc, char* argv[])
     bool runtime_only = false;
     bool force = false;
     bool pack_runtime = false;
-    std::string region;  /* empty => auto-detect from the ROM */
+    std::string region;  /* empty => exact profile detection from the ROM */
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if (arg == "--verbose" || arg == "-v") {
@@ -62,13 +61,13 @@ int main(int argc, char* argv[])
         } else if (arg.rfind("--region=", 0) == 0) {
             region = std::string(arg.substr(std::string_view("--region=").size()));
         } else if (arg == "--help" || arg == "-h") {
-            fmt::print("Usage: asset_extractor [--verbose] [--runtime-only] [--force] [--pak] [--region usa|eu|jp]\n"
+            fmt::print("Usage: asset_extractor [--verbose] [--runtime-only] [--force] [--pak] [--region usa|eu|jp|jp-angel-sp4]\n"
                        "  --verbose       Print per-asset notes/warnings.\n"
                        "  --runtime-only  Skip writing the editable assets_src/ tree.\n"
                        "  --force         Re-extract even if assets/ are already up to date.\n"
                        "  --pak           Pack runtime assets into per-category .pak archives\n"
                        "                  instead of writing thousands of loose files.\n"
-                       "  --region R      Cache subdir (usa|eu|jp). Default: detect from ROM.\n");
+                       "  --region R      Assert the detected cache subdir (usa|eu|jp|jp-angel-sp4).\n");
             return 0;
         }
     }
@@ -84,11 +83,25 @@ int main(int argc, char* argv[])
     AssetExtractorApi::Options opt;
     opt.rom_path = executable_dir / "baserom.gba";
 
-    /* Per-region cache: assets/<region>/ + assets_src/<region>/, so extracting one
-     * region never clobbers another's tree (all retail ROMs are 16 MB). */
-    const std::string region_sub = !region.empty() ? region : DetectRegionSubdir(opt.rom_path);
-    opt.editable_root = executable_dir / "assets_src" / region_sub;
-    opt.runtime_root = executable_dir / "assets" / region_sub;
+    /* Per-profile cache: assets/<profile>/ + assets_src/<profile>, so clean JP
+     * and Angel SP4 never reuse each other's extracted tree. */
+    PortRomHashes hashes = {};
+    const std::string detected_subdir = DetectProfileSubdir(opt.rom_path, &hashes);
+    if (detected_subdir.empty()) {
+        fmt::print(stderr,
+                   "asset_extractor: baserom.gba is not a supported exact ROM profile.\n"
+                   "SHA-1: {}\nSHA-256: {}\n",
+                   hashes.sha1, hashes.sha256);
+        return 1;
+    }
+    if (!region.empty() && region != detected_subdir) {
+        fmt::print(stderr,
+                   "asset_extractor: --region={} does not match this ROM's profile cache ({}).\n",
+                   region, detected_subdir);
+        return 1;
+    }
+    opt.editable_root = executable_dir / "assets_src" / detected_subdir;
+    opt.runtime_root = executable_dir / "assets" / detected_subdir;
     opt.runtime_only = runtime_only;
     opt.pack_runtime = pack_runtime;
     opt.force = force;

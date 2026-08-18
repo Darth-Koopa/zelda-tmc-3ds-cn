@@ -9,6 +9,7 @@
 #include "ui.h"
 #ifdef PC_PORT
 #include <stdio.h>
+#include "../port/port_rom_profile.h"
 #include "../port/port_tts.h"
 #endif
 
@@ -690,7 +691,11 @@ u16 RunTextCommand(TextRender* this) {
         gMessage.unk = 0x80;
     }
     this->curToken.extended = 0;
+#ifdef PC_PORT
+    if (((chr >> 8) & 0xFu) == Port_GetSpecialPaletteBank()) {
+#else
     if (chr >> 8 == 7) {
+#endif
         this->_90 = this->_8f | 0x80;
         PaletteChange(this, 0);
     } else {

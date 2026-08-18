@@ -11,6 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The generated index also provides the optional asset-to-ROM reconstruction
+ * helper below. Keep its legacy globals explicit so this translation unit can
+ * compile independently for the standalone asset extractor. */
+extern u8* gRomData;
+extern u32 gRomSize;
+
 #define ROM_IMAGE_SIZE 0x1000000 /* 16 MB */
 #define ASSET_ENTRY_COUNT 9968
 

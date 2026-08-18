@@ -18,9 +18,9 @@ struct Options {
     /* Path to baserom.gba on disk. Ignored if rom_buffer is non-empty. */
     std::filesystem::path rom_path;
 
-    /* In-memory ROM bytes. When non-empty, the extractor copies these
-     * into its global Rom buffer instead of reading rom_path. tmc_pc
-     * uses this so the engine and extractor share a single 16 MB read. */
+    /* In-memory ROM bytes. When non-empty, the extractor aliases this buffer
+     * instead of reading rom_path. The caller must keep it alive through the
+     * call; tmc_pc uses this to share the engine's single 16 MB read. */
     std::span<const uint8_t> rom_buffer;
 
     /* Output trees. editable_root is assets_src/ (human readable);
@@ -60,7 +60,7 @@ bool ExtractAssets(const Options& opt, std::string* error);
 
 /* Fast path the engine can call before showing the progress bar:
  * peek at runtime_root/.asset_build_state.json and compare the
- * recorded ROM fingerprint + pack format against the on-disk ROM.
+ * recorded ROM profile, fingerprint, and pack format against the on-disk ROM.
  * Returns true if the runtime tree can be used as-is. */
 bool RuntimeUpToDate(const std::filesystem::path& runtime_root,
                      const std::filesystem::path& rom_path,

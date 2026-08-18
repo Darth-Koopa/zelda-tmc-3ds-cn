@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "port_text_codec.h"
+
 namespace PortAssetPipeline {
 
 /* Version of the extracted-asset output (schema + content). MUST be bumped
@@ -22,7 +24,7 @@ namespace PortAssetPipeline {
  * stamped by an older binary are treated as stale. Checked by both the
  * JSON-tree rebuild path (RuntimeAssetsNeedRebuild) and the warm-launch
  * stamp check (AssetExtractorApi::RuntimeUpToDate). */
-inline constexpr int kBuildStateVersion = 3; /* v3: EU paletteGroups 208 -> 207 */
+inline constexpr int kBuildStateVersion = 4; /* v4: exact ROM profile + profile-aware text codec */
 
 /* Read the whole file at `path` into `out`, resized to its size.
  * Returns true on success; a 0-byte file succeeds with `out` empty. On
@@ -74,12 +76,13 @@ bool WritePaletteJson(const std::filesystem::path& outputPath, std::span<const u
 bool ReadPaletteJson(const std::filesystem::path& inputPath, std::vector<uint8_t>& paletteData,
                      std::string* error = nullptr);
 bool DecodeTmcText(const uint8_t* textData, size_t maxBytes, std::string& text, size_t* consumedBytes = nullptr,
-                   std::string* error = nullptr);
-bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std::string* error = nullptr);
+                   std::string* error = nullptr, PortTextCodec codec = PORT_TEXT_CODEC_RETAIL);
+bool EncodeTmcText(const std::string& text, std::vector<uint8_t>& textData, std::string* error = nullptr,
+                   PortTextCodec codec = PORT_TEXT_CODEC_RETAIL);
 bool WriteEditableText(const std::filesystem::path& outputPath, const std::vector<uint8_t>& textData,
-                       std::string* error = nullptr);
+                       std::string* error = nullptr, PortTextCodec codec = PORT_TEXT_CODEC_RETAIL);
 bool ReadEditableText(const std::filesystem::path& inputPath, std::vector<uint8_t>& textData,
-                      std::string* error = nullptr);
+                      std::string* error = nullptr, PortTextCodec codec = PORT_TEXT_CODEC_RETAIL);
 bool WriteEditableAnimation(const std::filesystem::path& outputPath, std::span<const uint8_t> animationData,
                             std::string* error = nullptr);
 bool ReadEditableAnimation(const std::filesystem::path& inputPath, std::vector<uint8_t>& animationData,
@@ -92,9 +95,11 @@ bool ReadEditableSpriteFrames(const std::filesystem::path& inputPath, std::vecto
 bool RuntimeAssetsNeedRebuild(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
                               std::string* reason = nullptr);
 bool BuildRuntimeAssets(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
-                        std::string* error = nullptr);
+                        std::string* error = nullptr,
+                        PortTextCodec textCodec = PORT_TEXT_CODEC_RETAIL);
 bool EnsureRuntimeAssetsBuilt(const std::filesystem::path& sourceRoot, const std::filesystem::path& outputRoot,
-                              std::string* reasonOrError = nullptr);
+                              std::string* reasonOrError = nullptr,
+                              PortTextCodec textCodec = PORT_TEXT_CODEC_RETAIL);
 
 /// Write the source-state file (`.asset_build_state.json`) into outputRoot
 /// based on the current contents of sourceRoot. Used by the extractor once

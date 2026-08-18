@@ -14,11 +14,13 @@ assembly byte-for-byte), that work belongs upstream at zeldaret/tmc — see
 
 - Read the [README](../README.md) for the build (`python3 build.py`, or the faster
   `xmake` dev cycle) and [INSTALL.md](INSTALL.md) for build options.
-- You need your own ROM at the repo root — it is **not** shipped. USA
-  `baserom.gba`, SHA1 `b4bd50e4131b027c334547b4524e2dbbd4227130`.
-- There is **no automated test suite.** Verification is interactive play, the
-  **F8** warp/debug menu, capturing repros with **F9**, and comparing against
-  GBA reference behaviour.
+- You need your own ROM at the repo root — it is **not** shipped. The default
+  example uses USA `baserom.gba`; JP work uses clean `baserom_jp.gba` as its
+  compile-time asset baseline. See [INSTALL.md](INSTALL.md#supported-roms).
+- Focused automated targets include `rom_profile_test`, `text_codec_test`, and
+  `asset_pipeline_test`; subsystem-specific tests are also defined in
+  `xmake.lua`. Interactive verification still uses the **F8** warp/debug menu,
+  **F9** repro captures, and comparison against GBA reference behaviour.
 - Code-quality conventions for this port (header ownership, the metrics that
   matter, when to add a characterization test) live in
   [docs/MAINTAINABILITY.md](MAINTAINABILITY.md).

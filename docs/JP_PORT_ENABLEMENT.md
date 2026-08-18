@@ -1,9 +1,10 @@
-# JP (BZMJ) version support on the PC port
+# JP (BZMJ) and Angel SP4 support
 
-*Status (2026-06-13): **booting and core-correct.** A JP build runs against the
-retail JP ROM with all data tables resolving correctly — verified by boot test.
-Remaining for full speedrun parity: Japanese text rendering and JP script-address
-tables (see "Remaining gaps").*
+*Status (2026-08-18): clean JP and the exact Angel Team Chinese SP4 revision have
+complete runtime profiles. All required runtime `RomOffsets` are populated;
+SP4's injected text codec, 16-bank font table, wide glyph layout, remap table,
+and palette rule are implemented natively. Generated JP asset-offset headers
+remain a local build prerequisite and are not committed.*
 
 The Minish Cap speedrun scene runs the **Japanese** version (RNG manipulations are
 version-exclusive and were authored for JP). The decomp supports JP at the source
@@ -14,7 +15,7 @@ runtime, and supplies the JP ROM data-table offsets.
 
 1. **Provide a legal JP baserom** (`BZMJ`, SHA-1 `6c5404a1effb17f481f352181d0f1c61a2765c5d`,
    see `tmc_jp.sha1`) as `baserom_jp.gba` in the repo root. (Gitignored — never committed.)
-2. **Build:** `python build.py --jp` (or `xmake f --game_version=JP -y && xmake build -y tmc_pc`).
+2. **Build:** `python3 build.py --jp` (or `xmake f --game_version=JP -y && xmake build -y tmc_pc`).
 3. **Run:** point the binary at the JP ROM. It auto-detects `JP (BZMJ)` and selects the
    JP offset table. Verified boot log:
    ```
@@ -25,7 +26,22 @@ runtime, and supplies the JP ROM data-table offsets.
    Entering AgbMain...
    ```
 
-## What's wired (all committed, USA build unaffected)
+For a JP-baseline 3DS debug build, generate the local asset-offset headers
+first, then invoke the cross build:
+
+```sh
+xmake f -y --game_version=JP
+xmake build -y asset_processor
+tools/bin/asset_processor extract JP build/JP/assets
+TMC3DS_REGION=JP TMC3DS_BUILD_TYPE=Debug platform/3ds/build.sh
+```
+
+The 3DS launcher deliberately requires this JP build family for clean JP and
+Angel SP4. The default USA/EU package rejects them before loading tables, and a
+JP package likewise rejects USA/EU ROMs; this avoids running with incompatible
+compile-time asset/layout choices.
+
+## What's wired
 
 - `ROM_REGION_JP`, `kRomOffsets_JP` (real values), `BZMJ` detection, JP/USA offset
   selection, JP-aware region messages — `port/port_config.h`, `port/port_rom.c`
@@ -35,6 +51,17 @@ runtime, and supplies the JP ROM data-table offsets.
   USA-only in the decomp) — `port/port_script_funcs.c`
 - `-I port` on the decomp ROM build's preprocess so committed `src/` port-includes
   resolve (header-resolution only; no PC code enters the ROM build) — `xmake.lua`
+- Exact SHA-1/SHA-256 runtime profiles for clean JP and Angel SP4. Unknown
+  `BZMJ` revisions fail closed and print their SHA-256.
+- Collision, Kinstone/fusion, figurine, Lake Hylia, lilypad, song, guard, inn,
+  Simon, Gust Jar, and multipart sprite offsets added after the original work.
+- Region-native addresses for 26 additional room entity lists, validated for
+  bounds, 16-byte records, and the final `0xFF` terminator.
+- SP4 text profile: glyph root `0xDC9F00`, 16 banks, remap root `0xE4F000`,
+  wide glyphs from bank 3, special palette bank 3, and the patch's variable
+  two/three-byte decoder.
+- Clean JP and SP4 use separate EEPROM saves, desktop save states, and
+  profile-keyed extracted asset caches.
 
 ## How `kRomOffsets_JP` was derived (content-anchoring)
 
@@ -42,7 +69,7 @@ This tree's decomp ROM build is **non-matching** (port edits shift symbols ~0xC4
 so `build/JP/tmc_jp.map` is NOT a valid source — its addresses don't match the retail
 ROM the port actually loads. Instead the offsets come straight from the **retail USA +
 JP ROMs**: the USA addresses are known-correct, so each USA table is located in the JP
-ROM. Per-field method (all 28 address fields, see the comment block in `port_rom.c`):
+ROM. Per-field method (see the comment block in `port_rom.c`):
 
 - **direct content-anchor** — unique 64-byte signature of the table start (version-stable
   tables: gfx/palette/map data);
@@ -57,10 +84,16 @@ with wrong offsets). `/tmp` scratch scripts that produced these aren't committed
 final values + provenance live in `port_rom.c`. Count/size fields are content-invariant
 (identical USA==EU) and carried over.
 
-## Remaining gaps (JP runs but is not yet speedrun-faithful)
+Later fields were recovered from unique retail signatures and JP asset-shift
+markers, then checked against pointer-table structure and ROM bounds. The 26
+room lists were additionally checked to end on a 16-byte entity record whose
+kind is `0xFF`.
 
-The game boots and core gameplay — rendering, RNG, rooms, movement, area data,
-and scripted cutscenes/NPCs — is correct.
+## Verification status and remaining hardware work
+
+Earlier clean-JP boot testing established the core runtime path. The SP4 work
+below is verified against the supplied ROM's structure and complete text corpus;
+its rendering and gameplay still require device-level QA.
 
 Resolved since the original writeup:
 
@@ -77,14 +110,23 @@ Resolved since the original writeup:
   (`sScriptFuncTable_JP` / `_EU`, selected at runtime via `REGION_IS_*`); the
   two USA-only functions are excluded for JP.
 
-Still needing JP treatment:
+- **Clean JP text compatibility.** The retail decoder path is unchanged and its
+  prefix-to-bank mapping is covered by regression tests.
+- **Angel SP4 text compatibility.** Both language slots were parsed from the
+  exact supported ROM: 160 language/group combinations and 7,473 messages in
+  total (3,776 in the Chinese slot). Every editable message round-trips to its
+  original bytes; the variable-length decoder, 16-bank range, wide-glyph
+  threshold, remap range, and palette bank also have focused native tests.
+- **Runtime ROM structure.** Both supplied 16 MiB JP profiles pass full hash,
+  required-offset, pointer-table, bounds, and text-table validation before the
+  engine starts. Unknown `BZMJ` revisions fail closed.
 
-1. **Japanese text rendering.** Basic kana render (the intro `こっちよ` textbox
-   is correct), but the full JP text *system* (kanji 2-byte encoding, font
-   widths/layout) is unverified — audit menus/dialogue against this JP build.
-
-This is the remaining path from "JP boots" to "JP speedrun-faithful". Pair a JP
-build with `--console-parity` for hardware-equivalent JP runs.
+The remaining work is device-level QA, not another inferred ROM layout: build a
+JP-baseline 3DS binary, then audit dialogue, menus, line wrapping, save isolation,
+room transitions, and cutscenes on real hardware. A Debug build emits symbols and
+`tmc-3ds.map` for crash-address resolution. Pair clean JP testing with
+`--console-parity` when checking speedrun behaviour on the desktop PC build;
+the 3DS frontend does not expose that command-line option.
 
 ## Related
 

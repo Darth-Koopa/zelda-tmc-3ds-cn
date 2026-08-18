@@ -77,11 +77,10 @@ extern int gActiveRegion;
 /*
  * Subdirectory name for the active region's extracted asset cache.
  *
- * The asset cache is keyed per-region (assets/<sub>/, assets_src/<sub>/) so that
- * switching ROMs never reuses or overwrites another region's extracted data —
- * the same isolation the save files use (tmc.sav / tmc_eu.sav / tmc_jp.sav). All
- * three retail ROMs are 16 MB, so the runtime up-to-date fingerprint cannot tell
- * them apart by size; a dedicated folder per region removes the ambiguity.
+ * Legacy region-only cache name. Runtime asset caches use
+ * Port_GetAssetCacheSubdir() so exact patch profiles such as Angel SP4 can be
+ * isolated from the clean ROM in the same region. This helper remains useful to
+ * code that only has compile-time/runtime region identity available.
  *
  * Works in both modes: REGION_IS_* are runtime reads in MULTI_REGION and folded
  * constants otherwise. UNKNOWN falls through to "usa" (the asset baseline).

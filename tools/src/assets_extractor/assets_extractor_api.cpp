@@ -3,6 +3,7 @@
 #include <assets_extractor.hpp>
 #include "port_asset_pipeline.hpp"
 #include "port_asset_log.hpp"
+#include "port_rom_profile.h"
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -11,6 +12,7 @@
 #include <cstring>
 #include <fstream>
 #include <system_error>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -64,6 +66,10 @@ bool RuntimeAssetsUpToDateImpl(const std::filesystem::path& runtime_root, const 
         if (!state.contains("rom_size") || !state.contains("rom_mtime")) {
             return false;
         }
+        const PortRomProfile* profile = Port_GetActiveRomProfile();
+        if (profile == nullptr || state.value("rom_profile", std::string()) != profile->id) {
+            return false;
+        }
         if (state["rom_size"].get<uint64_t>() != fp.size) {
             return false;
         }
@@ -82,62 +88,167 @@ bool RuntimeAssetsUpToDateImpl(const std::filesystem::path& runtime_root, const 
         if (desired != recorded) {
             return false;
         }
+
+        static constexpr const char* kRequiredRuntimeManifests[] = {
+            "gfx_groups.json",       "palette_groups.json", "palettes.json",       "tilemaps.json",
+            "area_room_headers.json", "area_tile_sets.json",  "area_room_maps.json", "area_tables.json",
+            "area_tiles.json",        "sprite_ptrs.json",      "texts.json",
+        };
+        for (const char* manifest : kRequiredRuntimeManifests) {
+            std::error_code manifest_ec;
+            if (!std::filesystem::is_regular_file(runtime_root / manifest, manifest_ec) || manifest_ec) {
+                return false;
+            }
+        }
         return true;
     } catch (...) { return false; }
 }
 
-void StampRomFingerprint(const std::filesystem::path& runtime_root, const RomFingerprint& fp, bool pack_runtime) {
+bool StampRomFingerprint(const std::filesystem::path& runtime_root, const RomFingerprint& fp, bool pack_runtime,
+                         std::string* error) {
     const std::filesystem::path state_path = runtime_root / ".asset_build_state.json";
     nlohmann::json state;
-    if (std::filesystem::exists(state_path)) {
-        std::ifstream in(state_path);
-        if (in) {
-            try {
-                in >> state;
-            } catch (...) { state = nlohmann::json::object(); }
+    std::ifstream in(state_path, std::ios::binary);
+    if (!in) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to open freshly written build state {}", state_path.string());
         }
+        return false;
     }
-    if (!state.is_object()) {
-        state = nlohmann::json::object();
+    try {
+        in >> state;
+    } catch (const std::exception& e) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to parse freshly written build state {}: {}", state_path.string(), e.what());
+        }
+        return false;
     }
+    if (!state.is_object() || !state.contains("files") || !state["files"].is_array()) {
+        if (error != nullptr) {
+            *error = fmt::format("freshly written build state {} has no file manifest", state_path.string());
+        }
+        return false;
+    }
+    /* Windows does not permit MoveFileExW(REPLACE_EXISTING) while our input
+     * handle still has the destination open without delete sharing. */
+    in.close();
     state["builder_version"] = PortAssetPipeline::kBuildStateVersion;
+    const PortRomProfile* profile = Port_GetActiveRomProfile();
+    state["rom_profile"] = profile != nullptr ? profile->id : "unknown";
     state["rom_size"] = fp.size;
     state["rom_mtime"] = fp.mtime;
     state["pack_format"] = pack_runtime ? "v1" : "loose";
 
-    PortAssetLog::EnsureDir(runtime_root);
-    std::ofstream out(state_path);
-    if (out) {
-        out << state.dump();
+    std::error_code ec;
+    std::filesystem::create_directories(runtime_root, ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to create {}: {}", runtime_root.string(), ec.message());
+        }
+        return false;
     }
+
+    std::filesystem::path temp_path = state_path;
+    temp_path += ".tmp";
+    std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to open {} for writing", temp_path.string());
+        }
+        return false;
+    }
+
+    const std::string serialized = state.dump();
+    out.write(serialized.data(), static_cast<std::streamsize>(serialized.size()));
+    out.close();
+    if (!out) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to write {}", temp_path.string());
+        }
+        std::filesystem::remove(temp_path, ec);
+        return false;
+    }
+
+#ifdef _WIN32
+    if (!MoveFileExW(temp_path.c_str(), state_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const std::error_code replace_ec(static_cast<int>(GetLastError()), std::system_category());
+        if (error != nullptr) {
+            *error = fmt::format("failed to replace {}: {}", state_path.string(), replace_ec.message());
+        }
+        std::filesystem::remove(temp_path, ec);
+        return false;
+    }
+#else
+    std::filesystem::rename(temp_path, state_path, ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to replace {}: {}", state_path.string(), ec.message());
+        }
+        std::filesystem::remove(temp_path, ec);
+        return false;
+    }
+#endif
+    return true;
 }
 
-/* Wipe stale outputs so a mode switch (loose <-> pak) doesn't leave
- * orphan files in runtime_root. baserom.gba and the build-state file
- * are preserved so callers don't accidentally nuke the user's ROM. */
-void WipeStaleRuntime(const std::filesystem::path& runtime_root, bool pack_runtime) {
+/* Wipe stale outputs so a mode switch (loose <-> pak) doesn't leave orphan
+ * files in runtime_root. The ROM is preserved, but the build-state stamp is
+ * deliberately removed before extraction: if extraction fails halfway, a
+ * stale stamp must not make the next launch trust an incomplete tree. */
+bool WipeStaleRuntime(const std::filesystem::path& runtime_root, bool pack_runtime, std::string* error) {
     std::error_code ec;
-    if (pack_runtime) {
-        for (const auto& entry : std::filesystem::directory_iterator(runtime_root, ec)) {
-            const auto& name = entry.path().filename().string();
-            if (name == ".asset_build_state.json" || name == "baserom.gba") {
-                continue;
-            }
-            if (entry.is_directory(ec)) {
-                std::filesystem::remove_all(entry.path(), ec);
-            } else if (entry.path().extension() == ".pak") {
-                std::filesystem::remove(entry.path(), ec);
-            }
+    (void)pack_runtime;
+
+    /* Invalidate the tree before deleting any payload. If a later removal
+     * fails, the next launch must re-extract instead of trusting a partially
+     * cleaned directory through the previous run's valid stamp. */
+    const std::filesystem::path state_path = runtime_root / ".asset_build_state.json";
+    std::filesystem::remove(state_path, ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to remove stale build state {}: {}", state_path.string(), ec.message());
         }
-    } else {
-        for (const auto& entry : std::filesystem::directory_iterator(runtime_root, ec)) {
-            if (!entry.is_regular_file(ec))
-                continue;
-            if (entry.path().extension() == ".pak") {
-                std::filesystem::remove(entry.path(), ec);
+        return false;
+    }
+
+    std::filesystem::directory_iterator it(runtime_root, ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = fmt::format("failed to enumerate {}: {}", runtime_root.string(), ec.message());
+        }
+        return false;
+    }
+
+    const std::filesystem::directory_iterator end;
+    std::vector<std::filesystem::path> stale_entries;
+    while (it != end) {
+        const auto& entry = *it;
+        const auto& name = entry.path().filename().string();
+        if (name != "baserom.gba") {
+            stale_entries.push_back(entry.path());
+        }
+
+        it.increment(ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = fmt::format("failed to enumerate {}: {}", runtime_root.string(), ec.message());
             }
+            return false;
         }
     }
+
+    for (const std::filesystem::path& entry_path : stale_entries) {
+        std::error_code remove_ec;
+        std::filesystem::remove_all(entry_path, remove_ec);
+        if (remove_ec) {
+            if (error != nullptr) {
+                *error = fmt::format("failed to remove stale runtime asset {}: {}", entry_path.string(),
+                                     remove_ec.message());
+            }
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -212,6 +323,23 @@ bool ExtractAssets(const Options& opt, std::string* error) {
 
     if (opt.editable_root.empty() || opt.runtime_root.empty()) {
         return fail("editable_root and runtime_root must be set");
+    }
+    if (opt.rom_buffer.empty() && opt.rom_path.empty()) {
+        return fail("either rom_path or rom_buffer must be provided");
+    }
+
+    /* Gate every public API path on the same exact, playable profiles as the
+     * desktop picker and 3DS launcher. This must run before the warm-cache fast
+     * path: size/mtime alone cannot distinguish clean JP from a 16 MiB patch. */
+    PortRomHashes inputHashes = {};
+    const PortRomProfile* profile = !opt.rom_buffer.empty()
+                                        ? Port_IdentifyRomBuffer(opt.rom_buffer.data(), opt.rom_buffer.size(),
+                                                                 &inputHashes)
+                                        : Port_IdentifyRomFile(opt.rom_path.string().c_str(), &inputHashes);
+    Port_SetActiveRomProfile(profile);
+    if (!Port_RomProfileIsPlayable(profile)) {
+        return fail(fmt::format("unsupported ROM profile (SHA-1: {}, SHA-256: {})", inputHashes.sha1,
+                                inputHashes.sha256));
     }
 
     auto& reporter = PortAssetLog::Reporter::Instance();
@@ -295,21 +423,18 @@ bool ExtractAssets(const Options& opt, std::string* error) {
      * same addresses as kRomOffsets_{USA,EU,JP} in port/port_rom.c.
      */
     char gameCode[5] = { 0 };
-    if (opt.rom_buffer.size() >= 0xB0) {
-        std::memcpy(gameCode, opt.rom_buffer.data() + 0xAC, 4);
-    } else if (!opt.rom_path.empty()) {
-        std::ifstream rf(opt.rom_path, std::ios::binary);
-        if (rf) {
-            rf.seekg(0xAC);
-            rf.read(gameCode, 4);
-        }
-    }
+    std::memcpy(gameCode, profile->gameCode, 4);
 
     Config config;
     config.gfxGroupsTableLength = 133;
     config.paletteGroupsTableLength = 208;
     config.spritePtrsCount = 329;
-    config.language = 1;
+    /* Gfx-group control bytes use the engine's language slot, not the
+     * human-readable region name: JP scripts/assets live in slot 0 while
+     * USA/EU English uses slot 1. Patched ROMs can retain BZMJ while changing
+     * the text glyph codec, so carry both values from the exact profile. */
+    config.language = profile->region == ROM_REGION_JP ? 0 : 1;
+    config.textCodec = profile->textCodec;
     if (std::memcmp(gameCode, "BZMP", 4) == 0) { /* EU */
         config.gfxGroupsTableOffset = 0x100204;
         config.paletteGroupsTableOffset = 0x0FED88;
@@ -360,7 +485,10 @@ bool ExtractAssets(const Options& opt, std::string* error) {
     config.outputRoot = opt.editable_root;
     config.runtimeOutputRoot = opt.runtime_root;
 
-    WipeStaleRuntime(opt.runtime_root, opt.pack_runtime);
+    std::string wipe_error;
+    if (!WipeStaleRuntime(opt.runtime_root, opt.pack_runtime, &wipe_error)) {
+        return fail(fmt::format("failed to clear stale runtime assets: {}", wipe_error));
+    }
 
     PakBuilderArray pak_builders;
     if (opt.pack_runtime) {
@@ -404,14 +532,18 @@ bool ExtractAssets(const Options& opt, std::string* error) {
 
     std::string build_error;
     if (config.runtimeOutputRoot.empty()) {
-        if (!PortAssetPipeline::BuildRuntimeAssets(opt.editable_root, opt.runtime_root, &build_error)) {
+        if (!PortAssetPipeline::BuildRuntimeAssets(opt.editable_root, opt.runtime_root, &build_error,
+                                                   config.textCodec)) {
             return fail(fmt::format("failed to build runtime assets: {}", build_error));
         }
     } else if (!PortAssetPipeline::WriteBuildStateFile(opt.editable_root, opt.runtime_root, &build_error)) {
         return fail(fmt::format("failed to write build state: {}", build_error));
     }
 
-    StampRomFingerprint(opt.runtime_root, rom_fp, opt.pack_runtime);
+    std::string stamp_error;
+    if (!StampRomFingerprint(opt.runtime_root, rom_fp, opt.pack_runtime, &stamp_error)) {
+        return fail(fmt::format("failed to stamp runtime assets: {}", stamp_error));
+    }
 
     if (opt.runtime_only) {
         std::error_code ec;

@@ -11,6 +11,35 @@ project(tmc_3ds VERSION "${TMC_3DS_PROJECT_VERSION}" LANGUAGES C CXX)
 
 set(TMC_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 
+set(TMC_3DS_REGION "USA" CACHE STRING "Compile-time asset baseline: USA, EU, or JP")
+set_property(CACHE TMC_3DS_REGION PROPERTY STRINGS USA EU JP)
+string(TOUPPER "${TMC_3DS_REGION}" TMC_3DS_REGION)
+if(TMC_3DS_REGION STREQUAL "USA")
+    set(TMC_3DS_LANGUAGE "ENGLISH")
+elseif(TMC_3DS_REGION STREQUAL "EU")
+    set(TMC_3DS_LANGUAGE "ENGLISH")
+elseif(TMC_3DS_REGION STREQUAL "JP")
+    set(TMC_3DS_LANGUAGE "JAPANESE")
+else()
+    message(FATAL_ERROR "TMC_3DS_REGION must be USA, EU, or JP (got '${TMC_3DS_REGION}')")
+endif()
+
+set(TMC_3DS_ASSET_BASELINE "${TMC_ROOT}/build/${TMC_3DS_REGION}")
+if(NOT EXISTS "${TMC_3DS_ASSET_BASELINE}/assets/map_offsets.h" OR
+   NOT EXISTS "${TMC_3DS_ASSET_BASELINE}/assets/gfx_offsets.h")
+    message(FATAL_ERROR
+        "Missing ${TMC_3DS_REGION} asset offset headers under ${TMC_3DS_ASSET_BASELINE}/assets. "
+        "Generate them with asset_processor and a legal ${TMC_3DS_REGION} baserom before configuring the 3DS build.")
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(TMC_3DS_OPT_FLAGS -Og -g3 -fno-omit-frame-pointer)
+    set(TMC_3DS_ENABLE_LTO OFF)
+else()
+    set(TMC_3DS_OPT_FLAGS -O3 -fomit-frame-pointer)
+    set(TMC_3DS_ENABLE_LTO ON)
+endif()
+
 file(GLOB TMC_ACTOR_SOURCES CONFIGURE_DEPENDS
     "${TMC_ROOT}/src/playerItem/*.c"
     "${TMC_ROOT}/src/enemy/*.c"
@@ -56,6 +85,7 @@ set(TMC_PORT_SOURCES
     port/port_bottle_compat.c
     port/port_cloud_tops_fight.c
     port/port_vaati_progress.c
+    port/port_rom_hash.c port/port_rom_profile.c port/port_text_codec.c
     port/port_stubs.c port/stubs_autogen.c port/data_stubs_autogen.c
     port/data_const_stubs.c port/flag_remap_generated.c port/port_rom_tables.c
     port/port_linked_stubs.c port/port_figurines.c port/port_draw.c
@@ -115,11 +145,11 @@ add_executable(tmc-3ds
 target_include_directories(tmc-3ds PRIVATE
     "${TMC_ROOT}" "${TMC_ROOT}/include" "${TMC_ROOT}/port"
     "${TMC_ROOT}/port/ppu/include" "${TMC_ROOT}/libs/agbplay_core"
-    "${TMC_ROOT}/build/USA" "${CMAKE_CURRENT_LIST_DIR}/source"
+    "${TMC_3DS_ASSET_BASELINE}" "${CMAKE_CURRENT_LIST_DIR}/source"
 )
 
 target_compile_definitions(tmc-3ds PRIVATE
-    PC_PORT NON_MATCHING USE_HDMA TMC_3DS MULTI_REGION USA ENGLISH REVISION=0
+    PC_PORT NON_MATCHING USE_HDMA TMC_3DS MULTI_REGION ${TMC_3DS_REGION} ${TMC_3DS_LANGUAGE} REVISION=0
     MODE1_GBA_WIDTH=400 MODE1_GBA_HEIGHT=240 PPU_GPU3DS_PROFILE
     TMC_PORT_VERSION="${TMC_3DS_VERSION}" TMC_PC_VERSION="${TMC_3DS_VERSION}"
 )
@@ -133,7 +163,7 @@ set_target_properties(tmc-3ds PROPERTIES
 )
 target_compile_options(tmc-3ds PRIVATE
     -include region.h
-    -O3 -fomit-frame-pointer -ffunction-sections -fdata-sections
+    ${TMC_3DS_OPT_FLAGS} -ffunction-sections -fdata-sections
     -fno-strict-aliasing -fwrapv -fno-strict-overflow -w
     -Wno-unused-parameter -Wno-missing-field-initializers
 )
@@ -162,6 +192,7 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition;-ffast-math"
 )
 target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
+target_link_options(tmc-3ds PRIVATE "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.map")
 target_link_libraries(tmc-3ds PRIVATE citro2d citro3d ctru m ppu_gpu_3ds_shader_bin)
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")

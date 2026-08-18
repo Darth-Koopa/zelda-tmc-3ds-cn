@@ -25,7 +25,8 @@ fi
 export DEVKITPRO
 cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
-  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_BUILD_TYPE="${TMC3DS_BUILD_TYPE:-Release}" \
+  -DTMC_3DS_REGION="${TMC3DS_REGION:-USA}"
 cmake --build "${BUILD}" --parallel "${TMC3DS_JOBS:-4}"
 
 if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then

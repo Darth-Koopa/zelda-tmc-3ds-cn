@@ -16,6 +16,7 @@
 #include "port_asset_loader.h"
 #include "port_config.h"
 #include "port_runtime_config.h"
+#include "port_rom_profile.h"
 #include "port_gba_mem.h"
 #include "structures.h"
 #include "tileMap.h"
@@ -615,21 +616,21 @@ const RomOffsets kRomOffsets_JP = {
     .paletteGroups = 0xFF500,
     .objPalettes = 0x132F94,
     .frameObjLists = 0x2F39A0,
-    .extraFrameOffsets = 0,
+    .extraFrameOffsets = 0x9DD6F0,
     .fixedTypeGfx = 0x13275C,
     .spritePtrs = 0x29B4,
-    .collisionMatrix = 0,
-    .collisionShapePtrs = 0,
-    .tileTypeProperties = 0,
-    .figurines = 0,
-    .fuserEnemyData = 0,
-    .fuserNpcData = 0,
-    .fusionTextPtrs = 0,
-    .fuserFusionPtrs = 0,
-    .lakeHyliaEnemies = 0,
-    .lakeHyliaCleared = 0,
-    .lilypadRails = 0,
-    .songTable = 0,
+    .collisionMatrix = 0x0B7914,
+    .collisionShapePtrs = PORT_COLLISION_SHAPE_PTRS_JP,
+    .tileTypeProperties = PORT_TILE_TYPE_PROPERTIES_JP,
+    .figurines = 0x127E6C,
+    .fuserEnemyData = 0x0000232E,
+    .fuserNpcData = 0x00002342,
+    .fusionTextPtrs = PORT_FUSION_TEXT_PTRS_JP,
+    .fuserFusionPtrs = PORT_FUSER_FUSION_PTRS_JP,
+    .lakeHyliaEnemies = 0x0F3A5C,
+    .lakeHyliaCleared = 0x0F3BBC,
+    .lilypadRails = 0x0FEA48,
+    .songTable = 0x9F3D3C,
     .translations = 0x108ED8,
     .text09230 = 0x108EF4,
     .text09244 = 0x108F08,
@@ -653,15 +654,15 @@ const RomOffsets kRomOffsets_JP = {
     .bgAnimTable = 0xB72FC,
     .localFlagBanks = 0x11E118,
     .townspersonSpriteLoadPtrs = 0x10B3B0,
-    .guardPatrolData = 0,
-    .innWestEntities = 0,
-    .innMiddleEntities = 0,
-    .innEastEntities = 0,
-    .simonEntityLists = 0,
-    .simonEnemyPatterns = 0,
-    .simonChestPatterns = 0,
-    .gustJarAnimTable = 0,
-    .gustJarHitbox = 0,
+    .guardPatrolData = 0x10F380,
+    .innWestEntities = 0x0D6814,
+    .innMiddleEntities = 0x0D68B8,
+    .innEastEntities = 0x0D6958,
+    .simonEntityLists = 0x0F09E0,
+    .simonEnemyPatterns = 0x0F0A80,
+    .simonChestPatterns = 0x0F0B30,
+    .gustJarAnimTable = 0x1323D8,
+    .gustJarHitbox = 0x132754,
     .gfxGroupsCount = 133,
     .paletteGroupsCount = 208,
     .objPalettesCount = 360,
@@ -681,7 +682,7 @@ u32 Port_TownspersonSpriteLoadPtrsOffset(void) {
 }
 
 u32 Port_CollisionMatrixOffset(void) {
-    return (gRomOffsets && gRomOffsets->collisionMatrix) ? gRomOffsets->collisionMatrix : 0x0B7B74u;
+    return gRomOffsets ? gRomOffsets->collisionMatrix : 0;
 }
 
 const u16* Port_GetCollisionShapeData(u32 index) {
@@ -699,8 +700,39 @@ u16 Port_GetTileTypeProperty(u32 tileType) {
 }
 
 RomRegion Port_DetectRomRegion(const u8* romData, u32 romSize) {
+    PortRomHashes hashes;
+    const PortRomProfile* profile;
+
+    /* Detection may be called more than once by tools/tests. Clear all
+     * identity state before validating the new input so a failed probe cannot
+     * accidentally retain the previous ROM's offsets or text codec. */
+    gRomRegion = ROM_REGION_UNKNOWN;
+    gRomOffsets = NULL;
+    Port_SetActiveRomProfile(NULL);
+#if defined(PC_PORT) && defined(MULTI_REGION)
+    gActiveRegion = TMC_REGION_USA;
+#endif
+
     if (!romData || romSize < 0xB0)
         return ROM_REGION_UNKNOWN;
+
+    profile = Port_IdentifyRomBuffer(romData, romSize, &hashes);
+    Port_SetActiveRomProfile(profile);
+    if (profile != NULL) {
+        fprintf(stderr, "ROM profile detected: %s (%s)\n", profile->displayName, profile->id);
+    } else {
+        fprintf(stderr, "ROM profile is not recognized (SHA-256: %s).\n", hashes.sha256);
+    }
+
+    if (profile == NULL) {
+        char message[512];
+        snprintf(message, sizeof(message),
+                 "This ROM revision is not supported.\n\n"
+                 "Only exact, tested USA, Europe, clean Japan, and Angel SP4 profiles are accepted.\n\n"
+                 "Game code: %.4s\nSHA-256: %s",
+                 &romData[0xAC], hashes.sha256);
+        Port_FatalRomError("Minish Cap PC Port - unsupported ROM revision", message);
+    }
 
     if (memcmp(&romData[0xAC], "BZME", 4) == 0) {
         gRomRegion = ROM_REGION_USA;
@@ -713,16 +745,12 @@ RomRegion Port_DetectRomRegion(const u8* romData, u32 romSize) {
     } else if (memcmp(&romData[0xAC], "BZMJ", 4) == 0) {
         gRomRegion = ROM_REGION_JP;
         fprintf(stderr, "ROM region detected: JP (BZMJ)\n");
-#if defined(JP) || defined(MULTI_REGION)
-        /* JP binary (or fat multi-region binary): use JP offsets, but refuse to
-         * proceed if the table is still the unpopulated placeholder. */
-        if (kRomOffsets_JP.gfxAndPalettes == 0) {
-            Port_FatalRomError("Minish Cap PC Port - JP not yet supported",
-                               "This is a Japanese (BZMJ) ROM, but this build's JP data tables "
-                               "are not populated yet.\n\n"
-                               "Use a USA (BZME) or EU (BZMP) ROM for now. See "
-                               "docs/JP_PORT_ENABLEMENT.md for the JP status.");
+        if (!Port_RomProfileIsPlayable(profile)) {
+            Port_FatalRomError("Minish Cap PC Port - unsupported JP ROM",
+                               "This known Japanese demo ROM is not supported for native play.");
         }
+#if defined(JP) || defined(MULTI_REGION)
+        /* JP binary (or fat multi-region binary): use verified JP offsets. */
         gRomOffsets = &kRomOffsets_JP;
 #else
         /* JP ROM fed to a single-region non-JP binary: code/data version
@@ -732,9 +760,15 @@ RomRegion Port_DetectRomRegion(const u8* romData, u32 romSize) {
         gRomOffsets = &kRomOffsets_USA;
 #endif
     } else {
-        fprintf(stderr, "WARNING: Unknown ROM game code '%.4s'. Defaulting to USA offsets.\n", &romData[0xAC]);
-        gRomRegion = ROM_REGION_USA;
-        gRomOffsets = &kRomOffsets_USA;
+        char message[320];
+        snprintf(message, sizeof(message),
+                 "Unsupported ROM game code '%.4s'.\n\nDetected SHA-256:\n%s\n\n"
+                 "Expected BZME (USA), BZMP (Europe), or BZMJ (Japan).",
+                 &romData[0xAC], hashes.sha256);
+        Port_FatalRomError("Minish Cap PC Port - unsupported ROM", message);
+        gRomRegion = ROM_REGION_UNKNOWN;
+        gRomOffsets = NULL;
+        return gRomRegion;
     }
 #if defined(PC_PORT) && defined(MULTI_REGION)
     /* Fat binary: publish the detected region to the runtime REGION_IS_* macros
@@ -1541,9 +1575,11 @@ void Port_LoadRom(const char* path) {
      * black screen. */
     if (!romLoaded) {
         Port_FatalRomError("Minish Cap PC Port - ROM not found",
-                           "Could not load baserom.gba.\n\n"
-                           "Place baserom.gba (USA) or baserom_eu.gba (EU) next to tmc_pc and try again.\n"
-                           "Supported names: baserom.gba, baserom_eu.gba, tmc.gba, tmc_eu.gba.");
+                           "Could not find a supported Minish Cap ROM.\n\n"
+                           "Place a supported USA, Europe, clean Japan, or Angel SP4 ROM next to tmc_pc.\n"
+                           "Supported names: baserom.gba, baserom_eu.gba, baserom_jp.gba, tmc.gba, "
+                           "tmc_eu.gba, tmc_jp.gba.\n"
+                           "You can also select a differently named .gba file in the ROM picker.");
     }
 
     if (!gRomData || gRomSize == 0) {
@@ -1562,6 +1598,16 @@ void Port_LoadRom(const char* path) {
     /* ---- Step 3: auto-detect ROM region ---- */
     Port_DetectRomRegion(gRomData, gRomSize);
     const RomOffsets* R = gRomOffsets;
+
+    {
+        char profileError[320];
+        if (!Port_ValidateRomProfile(Port_GetActiveRomProfile(), R, gRomData, gRomSize, profileError,
+                                     sizeof(profileError))) {
+            char message[512];
+            snprintf(message, sizeof(message), "The selected ROM profile failed validation.\n\n%s", profileError);
+            Port_FatalRomError("Minish Cap PC Port - invalid ROM profile", message);
+        }
+    }
 
     if (gRomSize < R->expectedRomSize) {
         char msg[256];
@@ -1751,7 +1797,12 @@ void Port_LoadRom(const char* path) {
     /* Font/text data tables — from active ROM */
     memcpy(gUnk_08109244, &gRomData[R->text09244], 4);
     memcpy(gUnk_0810926C, &gRomData[R->text0926C], 64);
-    memcpy(gUnk_081092D4, &gRomData[R->text092D4], 346);
+    {
+        const u32 remapOffset = Port_GetTextRemapOffset(R->text092D4);
+        const u32 remapSize = Port_GetTextRemapSize();
+        memset(gUnk_081092D4, 0, PORT_TEXT_REMAP_CAPACITY);
+        memcpy(gUnk_081092D4, &gRomData[remapOffset], remapSize);
+    }
     memcpy(gUnk_0810942E, &gRomData[R->text0942E], 160);
     memcpy(gUnk_081094CE, &gRomData[R->text094CE], 1378);
 
@@ -1804,11 +1855,17 @@ void Port_LoadRom(const char* path) {
     }
 #endif
 
-    /* gUnk_08109248 — resolved from active ROM */
-    for (int i = 0; i < 9; i++) {
-        gUnk_08109248[i] = Port_UnpackRomDataPtr(&gRomData[R->text09248], i);
+    /* gUnk_08109248 — resolved from the active ROM variant. */
+    {
+        const u32 glyphTableOffset = Port_GetGlyphTableOffset(R->text09248);
+        const u32 glyphBankCount = Port_GetGlyphBankCount();
+        memset(gUnk_08109248, 0, sizeof(void*) * PORT_MAX_GLYPH_BANKS);
+        for (u32 i = 0; i < glyphBankCount; i++) {
+            gUnk_08109248[i] = Port_UnpackRomDataPtr(&gRomData[glyphTableOffset], i);
+        }
+        fprintf(stderr, "gUnk_08109248 font tables loaded (%u entries from ROM 0x%X).\n", glyphBankCount,
+                glyphTableOffset);
     }
-    fprintf(stderr, "gUnk_08109248 font tables loaded (9 entries from active ROM).\n");
 
     /* gUnk_081092AC — resolved from active ROM */
     for (int i = 0; i < 10; i++) {

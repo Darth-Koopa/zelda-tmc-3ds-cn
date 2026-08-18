@@ -2,7 +2,7 @@
  * port_asset_loader.cpp so the loader's stages stay grouped by concern.
  * This file is included into the same translation unit and intentionally
  * relies on the surrounding helpers / cache state already visible there. */
-void LoadModManifest(const std::filesystem::path& modsRoot, const std::filesystem::path& modDir,
+void LoadModManifest(AssetGroupCache& cache, const std::filesystem::path& modsRoot, const std::filesystem::path& modDir,
                      const std::filesystem::path& manifestPath) {
     nlohmann::json manifest;
     if (!LoadJsonFile(manifestPath, manifest) || !manifest.is_object()) {
@@ -74,7 +74,7 @@ void LoadModManifest(const std::filesystem::path& modsRoot, const std::filesyste
             ++skipped;
             continue;
         }
-        auto [_, inserted] = gAssetGroupCache.modReplacements.emplace(assetPath, replacementPath);
+        auto [_, inserted] = cache.modReplacements.emplace(assetPath, replacementPath);
         if (inserted) {
             ++loaded;
         } else {
@@ -100,7 +100,8 @@ void LoadModManifest(const std::filesystem::path& modsRoot, const std::filesyste
  * Skips `mod_manifest.json`, README*, .git*, and any file under
  * `assets-src/` (raw editing source, not runtime input).
  */
-void AutoDiscoverModReplacements(const std::filesystem::path& modDir, const std::string& modName) {
+void AutoDiscoverModReplacements(AssetGroupCache& cache, const std::filesystem::path& modDir,
+                                 const std::string& modName) {
     auto should_skip = [](const std::filesystem::path& p) {
         const std::string name = p.filename().generic_string();
         if (name == "mod_manifest.json") return true;
@@ -134,7 +135,7 @@ void AutoDiscoverModReplacements(const std::filesystem::path& modDir, const std:
          * over later ones, matching the directory-iterator order
          * (typically alphabetical). Manifest entries inserted before
          * this scan also stay intact. */
-        auto [_, inserted] = gAssetGroupCache.modReplacements.emplace(assetPath, entry.path());
+        auto [_, inserted] = cache.modReplacements.emplace(assetPath, entry.path());
         if (inserted) ++loaded;
     }
     if (loaded != 0) {
@@ -145,23 +146,23 @@ void AutoDiscoverModReplacements(const std::filesystem::path& modDir, const std:
 
 /* Treat `modDir` as one mod's root: if a manifest exists, honour it;
  * otherwise auto-discover by walking the tree. */
-void LoadModFromDirectory(const std::filesystem::path& parentForRelativeReplacements,
+void LoadModFromDirectory(AssetGroupCache& cache, const std::filesystem::path& parentForRelativeReplacements,
                           const std::filesystem::path& modDir) {
     const std::filesystem::path manifestPath = modDir / "mod_manifest.json";
     const std::string modName = modDir.filename().generic_string();
     if (std::filesystem::exists(manifestPath)) {
-        LoadModManifest(parentForRelativeReplacements, modDir, manifestPath);
+        LoadModManifest(cache, parentForRelativeReplacements, modDir, manifestPath);
     } else {
-        AutoDiscoverModReplacements(modDir, modName);
+        AutoDiscoverModReplacements(cache, modDir, modName);
     }
 }
 
-void ScanMods() {
-    if (gAssetGroupCache.modsScanned) {
+void ScanMods(AssetGroupCache& cache) {
+    if (cache.modsScanned) {
         return;
     }
-    gAssetGroupCache.modsScanned = true;
-    gAssetGroupCache.modReplacements.clear();
+    cache.modsScanned = true;
+    cache.modReplacements.clear();
 
     /* Dedupe by canonicalised path so a mod reachable via both
      * <exe-dir>/mods (auto-scan) and Port_AddModRoot (explicit) loads
@@ -180,7 +181,7 @@ void ScanMods() {
         if (!std::filesystem::is_directory(modDir)) return;
         const std::string key = canonical_key(modDir);
         if (!seen.insert(key).second) return; /* already loaded */
-        LoadModFromDirectory(parent, modDir);
+        LoadModFromDirectory(cache, parent, modDir);
     };
 
     /* Sorted directory iteration so mod precedence is alphabetical
@@ -203,7 +204,7 @@ void ScanMods() {
     /* 1. Explicit mod paths registered via Port_AddModRoot from
      * port_mods.cpp. Preserve registration order: TMC_MODS=foo,bar
      * means foo has priority over bar. */
-    for (const auto& explicitMod : gAssetGroupCache.modRoots) {
+    for (const auto& explicitMod : cache.modRoots) {
         load_one(explicitMod.parent_path(), explicitMod);
     }
 
@@ -212,15 +213,15 @@ void ScanMods() {
      * cwd, so dropping mods next to either the binary or the working
      * directory works. Skipped when TMC_MODS supplied an explicit
      * active set. */
-    if (!gAssetGroupCache.modExplicitSelection) {
+    if (!cache.modExplicitSelection) {
         for (const auto& root : AssetSearchRoots()) {
             load_children_sorted(root / "mods");
         }
     }
 
-    if (!gAssetGroupCache.modReplacements.empty()) {
+    if (!cache.modReplacements.empty()) {
         std::fprintf(stderr, "[MOD] %zu file%s overriding base assets\n",
-                     gAssetGroupCache.modReplacements.size(),
-                     gAssetGroupCache.modReplacements.size() == 1 ? "" : "s");
+                     cache.modReplacements.size(),
+                     cache.modReplacements.size() == 1 ? "" : "s");
     }
 }

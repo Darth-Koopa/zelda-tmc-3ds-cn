@@ -49,6 +49,7 @@ struct Config
     uint32_t spritePtrsCount;
     uint32_t translationsTableOffset;
     uint8_t language;
+    PortTextCodec textCodec{ PORT_TEXT_CODEC_RETAIL };
     std::string variant;
     std::filesystem::path outputRoot;         // assets_src/ (editable, human-friendly)
     std::filesystem::path runtimeOutputRoot;  // assets/    (engine-loadable, raw bytes)
@@ -2364,7 +2365,7 @@ inline bool extract_texts(const Config& config)
         size_t consumed_bytes = 0;
         std::string err;
         if (!PortAssetPipeline::DecodeTmcText(Rom.data() + pm.rom_offset, Rom.size() - pm.rom_offset, symbolic_text,
-                                              &consumed_bytes, &err)) {
+                                              &consumed_bytes, &err, config.textCodec)) {
             if (reporter.Verbose()) {
                 reporter.Warn(fmt::format("decode text 0x{:X}: {}", pm.rom_offset, err));
             }
@@ -2382,7 +2383,8 @@ inline bool extract_texts(const Config& config)
                               ("message_" + message_name + ".bin");
 
         std::string write_err;
-        if (!PortAssetPipeline::WriteEditableText(config.outputRoot / pm.editable_relative, pm.bytes, &write_err)) {
+        if (!PortAssetPipeline::WriteEditableText(config.outputRoot / pm.editable_relative, pm.bytes, &write_err,
+                                                  config.textCodec)) {
             if (reporter.Verbose()) {
                 reporter.Warn(fmt::format("editable text {}: {}", pm.editable_relative.generic_string(), write_err));
             }
