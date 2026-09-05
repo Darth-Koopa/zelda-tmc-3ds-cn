@@ -10,9 +10,12 @@ on:
 permissions:
   contents: read
 
+env:
+  TMC3DS_REGION: JP
+
 jobs:
   build:
-    name: Nintendo 3DS packages
+    name: Nintendo 3DS JP packages
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
@@ -27,26 +30,45 @@ jobs:
             command -v "$tool"
           done
 
-      - name: Build universal CIA and 3DSX
-        run: ./platform/3ds/build.sh
+      - name: Install Bannertool
+        run: |
+          git config --global url."https://github.com/".insteadOf "git://github.com/"
+          git clone --recursive https://github.com/Epicpkmn11/bannertool.git /tmp/bannertool
+          cd /tmp/bannertool
+          make
+          mkdir -p /opt/devkitpro/tools/bin/
+          cp output/linux-x86_64/bannertool /opt/devkitpro/tools/bin/
+
+      - name: Install Makerom
+        run: |
+          git clone --recursive https://github.com/profi200/Project_CTR.git /tmp/Project_CTR
+          cd /tmp/Project_CTR
+          make
+          mkdir -p /opt/devkitpro/tools/bin/
+          cp makerom/bin/makerom /opt/devkitpro/tools/bin/
+
+      - name: Build JP 3DSX and CIA
+        run: |
+          export PATH="/opt/devkitpro/tools/bin:$PATH"
+          ./platform/3ds/build.sh
 
       - name: Verify build outputs and legal files
         run: |
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
-          test ! -f baserom.gba
-          ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
-          ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
-          test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
-          if [ -f "build-3ds/game/tmc-3ds-v${VERSION}.cia" ]; then
-            echo "CIA package was built."
-          else
-            echo "CIA package skipped because makerom/bannertool are unavailable in CI."
-          fi
 
-      - name: Upload packages
+          test ! -f baserom.gba
+
+          ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
+
+          ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
+
+          test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
+          test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
+
+      - name: Upload JP packages
         uses: actions/upload-artifact@v7
         with:
-          name: tmc-3ds-packages
+          name: tmc-3ds-packages-JP
           if-no-files-found: error
           path: |
             build-3ds/game/tmc-3ds-v*.3dsx
