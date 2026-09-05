@@ -80,7 +80,9 @@ bool32 Port_RepairSmithBottleFlags(SaveFile* save, bool32 randomizerActive) {
     return TRUE;
 }
 
+#if !defined(JP) && !defined(EU) && !defined(DEMO_JP)
 static_assert(KAKERA_TAKARA_A == 0xB4u, "USA Smith bottle flag changed");
+#endif
 static_assert(KINSTONE_A == 0x0Au, "EU 0xB4 owner fusion changed");
 static_assert(KINSTONE_16 == 0x16u, "Smith fusion id changed");
 static_assert(ITEM_BOTTLE4 == ITEM_BOTTLE1 + 3, "bottle inventory ids must remain contiguous");
