@@ -2040,13 +2040,13 @@ static int TmcUtf8Next(const char** ps, uint32_t* out) {
     return 1;
 }
 
-static int TmcCnBodyColor(int style) {
+static uint32_t TmcCnBodyColor(int style) {
     switch (style) {
-        case SS_TEXT_WHITE: return (int)sMsgPal[14];
-        case SS_TEXT_RED: return (int)sMsgPal[8];
-        case SS_TEXT_GREEN: return (int)sMsgPal[2];
-        case SS_TEXT_NAVY: return (int)sBigPal[SS_TEXT_NAVY][14];
-        default: return (int)sMsgPal[11];
+        case SS_TEXT_WHITE: return sMsgPal[14];
+        case SS_TEXT_RED: return sMsgPal[8];
+        case SS_TEXT_GREEN: return sMsgPal[2];
+        case SS_TEXT_NAVY: return sBigPal[SS_TEXT_NAVY][14];
+        default: return sMsgPal[11];
     }
 }
 
@@ -2061,7 +2061,7 @@ static int32_t TmcCnWidth(const char* str, int32_t scale) {
         else if (cp == ' ') w += TMC_CN_SPACE_ADVANCE * scale;
         else if (cp < 0x80 && sBigFontOk) {
             const u8* g = BigGlyphData((char)cp);
-            int gs, gw, adv;
+            int32_t gs, gw, adv;
             GlyphMetrics(g, &gs, &gw); adv = gw;
             GlyphMetrics(g + 64, &gs, &gw); adv += gw;
             if (adv > 1) adv--;
