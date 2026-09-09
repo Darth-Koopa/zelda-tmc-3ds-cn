@@ -120,12 +120,12 @@ extern double Port_PPU_3DS_AverageFps(void);
  * "B<1-n>" — e.g. Deepwood {3 floors, highest 3} = 1F, B1, B2. */
 static const char* const kDungeonNames[7] = {
     NULL,
-    "Deepwood Shrine",
-    "Cave of Flames",
-    "Fortress of Winds",
-    "Temple of Droplets",
-    "Palace of Winds",
-    "Dark Hyrule Castle",
+    "海鲁森林神殿",
+    "火焰洞窟",
+    "风之堡垒",
+    "水滴神殿",
+    "风之宫殿",
+    "黑暗海鲁城堡",
 };
 static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 
@@ -611,7 +611,7 @@ static int32_t TextWidthPx(const char* str, int32_t scale) {
 /* ------------------------------------------------------------------ */
 
 /* Every panel label renders in the fat banner lettering (theme bank 8 —
- * the "South Hyrule Field" face: white body, silver shade, navy outline,
+ * the "海鲁南部平原" face: white body, silver shade, navy outline,
  * recolored per SS_TEXT_* on light surfaces). Metrics are in that font's
  * units: a glyph box is 16 rows tall at scale ms; ink fills nearly the
  * whole box, so vertical centering uses the box middle at 8*ms. The 5x7
@@ -1281,7 +1281,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         /* With no fix, or the follow cam switched off, the whole map is the
          * only view there is and the chip would have nothing to step to. */
         float chip[4];
-        DrawMapChip(s, "ZOOM", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+        DrawMapChip(s, "缩放", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
@@ -1382,7 +1382,7 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     }
 
     float chip[4];
-    DrawMapChip(s, "BACK", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+    DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
     AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
     /* Anywhere else on the region map goes back too — the same "tap again"
      * gesture that opened it. */
@@ -1524,7 +1524,7 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
      * like the pause screens hang theirs. */
     int32_t hms = (int32_t)(2.4f * u);
     if (hms < 1) hms = 1;
-    DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "ITEMS", hms, u);
+    DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "物品", hms, u);
     iy0 += MENU_TEXT_BOX * hms + 32 * u;
 
     const int cols = 4, rows = 4;
@@ -1667,7 +1667,7 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                                                                 pw, ph, snap);
         if (drawn) {
             float chip[4];
-            DrawMapChip(s, "BACK", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+            DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
             AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
             AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
             return;
@@ -1829,24 +1829,24 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "TOP HUD",          "WIDESCREEN",        "FOLLOW CAM",       "WINDCREST PINS",
-    "FLOOR AUTO RETURN", "TURBO SPEED",       "MASTER VOLUME",    "AUTOSAVE",
-    "COLOR CORRECTION", "SHOW FPS",           "HOLD TO ADVANCE TEXT",
-    "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
+    "上方",          "宽屏",        "镜头",       "风印",
+    "楼层返回", "涡轮速度",       "音量",    "自动保存",
+    "色彩校正", "显示帧率",           "按键推进",
+    "随机",       "面板背景",     "交换屏幕",
 #ifdef TMC_3DS
-    "ASPECT RATIO",     "DISPLAY STYLE",
+    "宽高比",     "显示模式",
 #endif
 };
 
 /* Value words of the PANEL BACKDROP row, indexed by SS_BACKDROP_*. The
- * default reads PATTERN rather than "PARCHMENT" because what actually
+ * default reads PATTERN rather than "原始" because what actually
  * changes between it and CREAM is the doodle lattice — and because the
  * longer word would not fit the value chip. Order follows the enum, which
  * appends so stored config values keep meaning the same style — it is not
  * a brightness ramp (DARK sits mid-list). Every word here is inside
  * SS_SET_WIDEST_VALUE, so none of them widen the value chip. */
 static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
-    "PATTERN", "CREAM", "DARK", "DIM", "STONE", "SLATE", "NAVY"
+    "图案", "奶油", "暗", "昏暗", "石", "板岩", "海军蓝"
 };
 
 /* Reserve only the width a row can actually use. A single global value
@@ -1854,16 +1854,16 @@ static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
  * though their chips only ever say ON/OFF. */
 static const char* SettingValueMinWord(int setting) {
     switch (setting) {
-        case SS_SET_TOP_HUD: return "SHOW";
+        case SS_SET_TOP_HUD: return "显示";
         case SS_SET_TURBO: return "X5";
         case SS_SET_VOLUME: return "100";
-        case SS_SET_BACKDROP: return "PATTERN";
-        case SS_SET_SWAP_SCREENS: return "RESTART";
+        case SS_SET_BACKDROP: return "图案";
+        case SS_SET_SWAP_SCREENS: return "重启";
 #ifdef TMC_3DS
-        case SS_SET_ASPECT_RATIO: return "ORIGINAL";
-        case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
+        case SS_SET_ASPECT_RATIO: return "原始";
+        case SS_SET_DISPLAY_STYLE: return "像素完美";
 #endif
-        default: return "OFF";
+        default: return "关闭";
     }
 }
 
@@ -1916,12 +1916,12 @@ static int SettingsPageRows(int page, uint8_t* out) {
 
 static const char* SettingsPageTitle(int page) {
     switch (page) {
-        case SS_SETTINGS_SCREEN: return "SCREEN";
-        case SS_SETTINGS_GAMEPLAY: return "GAMEPLAY";
-        case SS_SETTINGS_DEVELOPER: return "DEVELOPER";
-        case SS_SETTINGS_OVERLAY: return "OVERLAY";
-        case SS_SETTINGS_RANDOMIZER: return "RANDOMIZER";
-        default: return "SETTINGS";
+        case SS_SETTINGS_SCREEN: return "屏幕";
+        case SS_SETTINGS_GAMEPLAY: return "游戏";
+        case SS_SETTINGS_DEVELOPER: return "开发者";
+        case SS_SETTINGS_OVERLAY: return "叠加";
+        case SS_SETTINGS_RANDOMIZER: return "随机";
+        default: return "设置";
     }
 }
 
@@ -1957,7 +1957,7 @@ static void DrawSettingsBack(const SSurf* s, TargetList* tl, float x0, float y0,
                              float u, int32_t ts) {
     float w = 154 * u;
     if (w < 54) w = 54;
-    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "BACK", 0, 0, u, ts);
+    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "返回", 0, 0, u, ts);
     AddTarget(tl, x0, y0, x0 + w, y0 + h, SS_ACT_SETTINGS_BACK, (uint8_t)backPage);
 }
 
@@ -2022,18 +2022,18 @@ static void DrawDeveloperActionRow(const SSurf* s, TargetList* tl, float x0, flo
 
 static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* snap, float x0, float y0,
                                   float x1, float y1, float u, int32_t ts) {
-    const char* labels[8] = { "VERSION", "MODEL", "FPS NOW", "FPS AVG", "CORE1", "SCREEN", "AREA", "ROOM" };
+    const char* labels[8] = { "版本", "机型", "当前帧率", "平均帧率", "核心1", "屏幕", "区域", "房间" };
     char values[8][16];
 #ifndef __ANDROID__
 #ifdef TMC_3DS
     double currentFps = Port_PPU_3DS_CurrentFps();
     double averageFps = Port_PPU_3DS_AverageFps();
     snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION);
-    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "NEW 3DS" : "OLD 3DS");
+    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "新机型" : "旧机型");
     snprintf(values[2], sizeof(values[2]), "%.0f", currentFps);
     snprintf(values[3], sizeof(values[3]), "%.0f", averageFps);
     snprintf(values[4], sizeof(values[4]), "%u", Platform3DS_Core1TimeLimit());
-    snprintf(values[5], sizeof(values[5]), "%s", Port_Config_WidescreenEnabled() ? "WIDE" : "NATIVE");
+    snprintf(values[5], sizeof(values[5]), "%s", Port_Config_WidescreenEnabled() ? "宽屏" : "原始");
 #else
     for (int i = 0; i < 6; ++i) snprintf(values[i], sizeof(values[i]), "N A");
 #endif
@@ -2059,16 +2059,16 @@ static int GetVolumeStop(void) {
 }
 
 /* Current display state of a row: fills the value label and returns
- * nonzero when the row should wear the red "active" chip. */
+ * nonzero when the row should wear the red "启用" chip. */
 static int GetSettingState(int row, char* out, int outCap) {
     int on = 0;
-    const char* txt = "OFF";
+    const char* txt = "关闭";
     switch (row) {
         case SS_SET_TOP_HUD:
             /* The row states what the top screen DOES: SHOW is the (red)
              * default, HIDE hands vitals duty to this panel. */
             on = !Port_Config_GetHideTopHud();
-            txt = on ? "SHOW" : "HIDE";
+            txt = on ? "显示" : "隐藏";
             break;
         case SS_SET_WIDESCREEN: on = Port_Config_WidescreenEnabled(); break;
         case SS_SET_FOLLOW: on = Port_Config_GetSecondScreenFollowCam(); break;
@@ -2110,7 +2110,7 @@ static int GetSettingState(int row, char* out, int outCap) {
              * fell back to a normal launch). */
             int want = Port_Config_GetSecondScreenSwap() ? 1 : 0;
             int active = Port_SecondScreen_GameOnSecondaryDisplay();
-            snprintf(out, (size_t)outCap, "%s", want != active ? "RESTART" : (want ? "ON" : "OFF"));
+            snprintf(out, (size_t)outCap, "%s", want != active ? "重启" : (want ? "ON" : "关闭"));
             return want;
         }
 #ifdef TMC_3DS
@@ -2123,7 +2123,7 @@ static int GetSettingState(int row, char* out, int outCap) {
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
-        txt = on ? "ON" : "OFF";
+        txt = on ? "ON" : "关闭";
     }
     snprintf(out, (size_t)outCap, "%s", txt);
     return on;
@@ -2152,13 +2152,13 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[4] = { "SCREEN", "GAMEPLAY", "DEVELOPER", "RANDOMIZER" };
+        static const char* const labels[4] = { "屏幕", "游戏", "开发者", "随机" };
         static const uint8_t pages[4] = {
             SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
         };
         const int rootRows = 4;
 #else
-        static const char* const labels[3] = { "SCREEN", "GAMEPLAY", "DEVELOPER" };
+        static const char* const labels[3] = { "屏幕", "游戏", "开发者" };
         static const uint8_t pages[3] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER };
         const int rootRows = 3;
 #endif
@@ -2182,25 +2182,25 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         if (rowH > 92 * u) rowH = 92 * u;
         char dumpValue[16];
         snprintf(dumpValue, sizeof(dumpValue), "%s",
-                 (int32_t)(dumpFlashUntil - tick) > 0 ? "DONE" : "WRITE");
-        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, "MEM DUMP", dumpValue,
+                 (int32_t)(dumpFlashUntil - tick) > 0 ? "完成" : "写入");
+        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, "内存转储", dumpValue,
                                SS_ACT_DEVELOPER_DUMP, u, ts);
 #ifdef TMC_3DS
         const char* loadValue = (int32_t)(loadStateFlashUntil - tick) > 0
                                     ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
-                                    : "LOAD";
-        DrawDeveloperActionRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap, "LOAD STATE",
+                                    : "读取";
+        DrawDeveloperActionRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap, "读取状态",
                                loadValue, SS_ACT_DEVELOPER_LOAD, u, ts);
         DrawSettingsValueRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "OVERLAY",
+        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "叠加",
                            SS_SETTINGS_OVERLAY, u, ts);
 #else
         (void)loadStateFlashUntil;
         (void)loadStateResult;
         DrawSettingsValueRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "OVERLAY",
+        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "叠加",
                            SS_SETTINGS_OVERLAY, u, ts);
 #endif
         return;
@@ -2323,9 +2323,9 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     }
 
     DrawMenuButton(s, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
-                   layout.buttonBottom, "CANCEL", 0, 0, u, ts);
+                   layout.buttonBottom, "取消", 0, 0, u, ts);
     DrawMenuButton(s, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
-                   layout.buttonBottom, "LOAD", 0, 0, u, ts);
+                   layout.buttonBottom, "读取", 0, 0, u, ts);
     AddTarget(tl, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
               layout.buttonBottom, SS_ACT_LOAD_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
@@ -2360,9 +2360,9 @@ static void PaintRandomizerConfirmation(const SSurf* s, TargetList* tl, float u,
     }
 
     DrawMenuButton(s, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
-                   layout.buttonBottom, "CANCEL", 0, 0, u, ts);
+                   layout.buttonBottom, "取消", 0, 0, u, ts);
     DrawMenuButton(s, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
-                   layout.buttonBottom, "CONTINUE", 0, 0, u, ts);
+                   layout.buttonBottom, "继续", 0, 0, u, ts);
     AddTarget(tl, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
               layout.buttonBottom, SS_ACT_RANDO_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
@@ -2477,8 +2477,8 @@ static void DrawItemRing(const SSurf* s, const SecondScreenSnapshot* snap, Targe
  * (include/player.h). Only the lettering stand-in: once the theme can
  * stamp the real label frames this table stops being reached. */
 static const char* const kRActionWords[] = {
-    NULL,  "CANCEL", "DROP", "THROW",  "READ", "CHECK", "OPEN",
-    "SPEAK", "GRAB", "LIFT", "GROW", "SHRINK", "ROLL",
+    NULL,  "取消", "丢下", "投掷",  "阅读", "检查", "打开",
+    "交谈", "抓取", "举起", "变大", "缩小", "翻滚",
 };
 
 /* The game's contextual R prompt, on the panel because the player may be
@@ -2793,10 +2793,10 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     float x0 = 8 * u, xr = sx0 - 8 * u, gap = 8 * u;
     float bw = (xr - x0 - 2 * gap) / 3.0f;
 
-    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "QUEST", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
-    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "MAP", activeTab == SS_TAB_MAP,
+    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "任务", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
+    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "地图", activeTab == SS_TAB_MAP,
                   SS_TAB_MAP, u, ts);
-    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "ITEMS",
+    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "物品",
                   activeTab == SS_TAB_ITEMS, SS_TAB_ITEMS, u, ts);
     /* Settings keeps its cog glyph instead of a word, on the same plate —
      * an empty label, not a null one, so the art path never has to guess. */

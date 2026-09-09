@@ -1,4 +1,7 @@
 #include "port_second_screen_theme.h"
+#include "port_second_screen_cn_font.h"
+
+#define TMC_CN_SPACE_ADVANCE 8
 
 #include "port_rom.h"
 #include "region.h"
@@ -6,6 +9,11 @@
 
 #include <math.h>
 #include <string.h>
+
+static const u8* BigGlyphData(char c);
+static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
+                              int32_t y, int32_t scale, const uint32_t* pal, const char* str);
+
 
 /*
  * Decode map (all runtime, zero baked pixels — see header):
@@ -1996,6 +2004,149 @@ int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t 
     return x - startX;
 }
 
+
+/* -------------------------------------------------------------------- */
+/*  Independent Chinese font for the 3DS bottom-screen UI                */
+/* -------------------------------------------------------------------- */
+
+static int TmcCnCellOf(uint32_t cp) {
+    int i;
+    for (i = 0; i < TMC_CN_COUNT; ++i) {
+        if (kTmcCnCell[i] == cp) return i;
+    }
+    return -1;
+}
+
+static int TmcUtf8Next(const char** ps, uint32_t* out) {
+    const unsigned char* p = (const unsigned char*)*ps;
+    uint32_t cp;
+    if (*p == 0) return 0;
+    if (*p < 0x80) {
+        cp = *p; p += 1;
+    } else if ((*p & 0xE0) == 0xC0 && p[1]) {
+        cp = ((uint32_t)(p[0] & 0x1F) << 6) | (uint32_t)(p[1] & 0x3F); p += 2;
+    } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2]) {
+        cp = ((uint32_t)(p[0] & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) |
+             (uint32_t)(p[2] & 0x3F); p += 3;
+    } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) {
+        cp = ((uint32_t)(p[0] & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) |
+             ((uint32_t)(p[2] & 0x3F) << 6) | (uint32_t)(p[3] & 0x3F); p += 4;
+    } else {
+        p += 1;
+        cp = '?';
+    }
+    *ps = (const char*)p;
+    *out = cp;
+    return 1;
+}
+
+static int TmcCnBodyColor(int style) {
+    switch (style) {
+        case SS_TEXT_WHITE: return (int)sMsgPal[14];
+        case SS_TEXT_RED: return (int)sMsgPal[8];
+        case SS_TEXT_GREEN: return (int)sMsgPal[2];
+        case SS_TEXT_NAVY: return (int)sBigPal[SS_TEXT_NAVY][14];
+        default: return (int)sMsgPal[11];
+    }
+}
+
+static int32_t TmcCnWidth(const char* str, int32_t scale) {
+    const char* p = str;
+    uint32_t cp;
+    int32_t w = 0;
+    if (scale < 1) scale = 1;
+    while (TmcUtf8Next(&p, &cp)) {
+        int cell = TmcCnCellOf(cp);
+        if (cell >= 0) w += TMC_CN_PX * scale;
+        else if (cp == ' ') w += TMC_CN_SPACE_ADVANCE * scale;
+        else if (cp < 0x80 && sBigFontOk) {
+            const u8* g = BigGlyphData((char)cp);
+            int gs, gw, adv;
+            GlyphMetrics(g, &gs, &gw); adv = gw;
+            GlyphMetrics(g + 64, &gs, &gw); adv += gw;
+            if (adv > 1) adv--;
+            w += adv * scale;
+        } else if (cp < 0x80) {
+            w += 6 * scale;
+        }
+    }
+    return w;
+}
+
+static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                           int32_t x, int32_t y, int32_t scale, int cell, uint32_t color) {
+    const uint32_t* src = &kTmcCnGlyph[(size_t)cell * TMC_CN_PX * TMC_CN_PX];
+    int py, px, ex, ey;
+    for (py = 0; py < TMC_CN_PX; ++py) {
+        for (px = 0; px < TMC_CN_PX; ++px) {
+            if ((src[py * TMC_CN_PX + px] >> 24) == 0) continue;
+            for (ey = 0; ey < scale; ++ey) {
+                int32_t dy = y + py * scale + ey;
+                if (dy < 0 || dy >= bufH) continue;
+                for (ex = 0; ex < scale; ++ex) {
+                    int32_t dx = x + px * scale + ex;
+                    if (dx >= 0 && dx < bufW) pixels[(size_t)dy * stride + dx] = color;
+                }
+            }
+        }
+    }
+}
+
+static void TmcDrawAscii5x7(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                            int32_t x, int32_t y, int32_t scale, char c, uint32_t color) {
+    /* Minimal fallback used only for ASCII mixed into JP/Chinese labels. */
+    static const uint8_t k[] = {
+        0x7E,0x81,0x81,0x81,0x81,0x81,0x7E, /* 0 */
+        0x18,0x38,0x18,0x18,0x18,0x18,0x7E, /* 1 */
+        0x7E,0x81,0x01,0x0E,0x30,0x40,0xFF, /* 2 */
+        0x7E,0x81,0x01,0x3E,0x01,0x81,0x7E, /* 3 */
+        0x06,0x0A,0x12,0x22,0x7F,0x02,0x02, /* 4 */
+        0xFF,0x80,0xFE,0x01,0x01,0x81,0x7E, /* 5 */
+        0x3E,0x40,0x80,0xFE,0x81,0x81,0x7E, /* 6 */
+        0xFF,0x01,0x02,0x04,0x08,0x10,0x10, /* 7 */
+        0x7E,0x81,0x81,0x7E,0x81,0x81,0x7E, /* 8 */
+        0x7E,0x81,0x81,0x7F,0x01,0x02,0x7C, /* 9 */
+    };
+    int i, r, col;
+    if (c == ' ') return;
+    if (c >= '0' && c <= '9') {
+        const uint8_t* g = &k[(c - '0') * 7];
+        for (r = 0; r < 7; ++r) for (col = 0; col < 7; ++col) if (g[r] & (0x40 >> col))
+            for (i = 0; i < scale; ++i) {
+                int32_t dy = y + r * scale + i;
+                int j;
+                if (dy < 0 || dy >= bufH) continue;
+                for (j = 0; j < scale; ++j) { int32_t dx = x + col * scale + j; if (dx >= 0 && dx < bufW) pixels[(size_t)dy * stride + dx] = color; }
+            }
+    }
+}
+
+static int32_t TmcDrawMixedBigText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                   int32_t x, int32_t y, int32_t scale, int style, const char* str) {
+    const char* p = str;
+    uint32_t cp;
+    int32_t start = x;
+    uint32_t color = (uint32_t)TmcCnBodyColor(style);
+    if (scale < 1) scale = 1;
+    while (TmcUtf8Next(&p, &cp)) {
+        int cell = TmcCnCellOf(cp);
+        if (cell >= 0) {
+            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, color);
+            x += TMC_CN_PX * scale;
+        } else if (cp == ' ') {
+            x += TMC_CN_SPACE_ADVANCE * scale;
+        } else if (cp < 0x80 && sBigFontOk) {
+            char tmp[2] = {(char)cp, 0};
+            x += DrawBigTextPal(pixels, bufW, bufH, stride, x, y, scale,
+                                sBigPal[style >= 0 && style < SS_TEXT_STYLE_COUNT ? style : SS_TEXT_INK], tmp);
+        } else if (cp < 0x80) {
+            TmcDrawAscii5x7(pixels, bufW, bufH, stride, x, y + 4 * scale, scale, (char)cp, color);
+            x += 6 * scale;
+        }
+    }
+    return x - start;
+}
+
 /* -------------------------------------------------------------------- */
 /*  Stylized banner font (bank 8)                                        */
 /* -------------------------------------------------------------------- */
@@ -2017,31 +2168,8 @@ static const u8* BigGlyphData(char c) {
 #define BIG_INK_ROWS 13   /* rows the body/shade roles actually cover */
 
 int32_t Port_SecondScreenTheme_BigTextWidth(const char* str, int32_t scale) {
-    int32_t w = 0, gs, gw, adv;
-    if (!sBuilt || !sBigFontOk || str == NULL) {
-        return 0;
-    }
-    if (scale < 1) {
-        scale = 1;
-    }
-    for (; *str; str++) {
-        if (*str == ' ') {
-            w += BIG_SPACE_ADVANCE;
-            continue;
-        }
-        {
-            const u8* g = BigGlyphData(*str);
-            GlyphMetrics(g, &gs, &gw);
-            adv = gw;
-            GlyphMetrics(g + 64, &gs, &gw);
-            adv += gw;
-            if (adv > 1) {
-                adv--; /* stylized glyphs share one outline column */
-            }
-            w += adv;
-        }
-    }
-    return w * scale;
+    if (!sBuilt || str == NULL) return 0;
+    return TmcCnWidth(str, scale);
 }
 
 /* Shared body of the stylized draw, taking the value->RGBA table directly so
@@ -2061,7 +2189,7 @@ static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int3
         const u8* glyph;
         int32_t cell, adv = 0;
         if (*str == ' ') {
-            x += BIG_SPACE_ADVANCE * scale;
+            x += TMC_CN_SPACE_ADVANCE * scale;
             continue;
         }
         glyph = BigGlyphData(*str);
@@ -2112,10 +2240,9 @@ static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int3
 int32_t Port_SecondScreenTheme_DrawBigText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                            int32_t x, int32_t y, int32_t scale, int style,
                                            const char* str) {
-    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) {
-        style = SS_TEXT_INK;
-    }
-    return DrawBigTextPal(pixels, bufW, bufH, stride, x, y, scale, sBigPal[style], str);
+    if (!sBuilt || pixels == NULL || str == NULL) return 0;
+    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
+    return TmcDrawMixedBigText(pixels, bufW, bufH, stride, x, y, scale, style, str);
 }
 
 /* Repeats a source patch of the plate over a destination rect at `scale`.
@@ -2231,7 +2358,7 @@ int Port_SecondScreenTheme_DrawMenuButton(uint32_t* pixels, int32_t bufW, int32_
         /* Label: the stylized font in the plate's own blue, shrunk until it
          * fits the plate's inner box the way the game's own lettering sits
          * inside SLEEP / SAVE. */
-        if (label != NULL && label[0] != '\0' && sBigFontOk) {
+        if (label != NULL && label[0] != '\0') {
             int32_t maxW = iw - 2 * ps, maxH = ih - ps;
             for (ls = (maxH > 0 ? maxH / BIG_INK_ROWS : 0); ls >= 1; ls--) {
                 textW = Port_SecondScreenTheme_BigTextWidth(label, ls);

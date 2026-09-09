@@ -252,7 +252,7 @@ int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t 
 /* Pixel width DrawText would advance (0 when the font is not ready). */
 int32_t Port_SecondScreenTheme_TextWidth(const char* str, int32_t scale);
 
-/* Text in the game's STYLIZED banner font — the fat white-on-navy
+/* Text in the game's STYLIZED banner font (with the independent JP-safe Chinese bottom-screen font) — the fat white-on-navy
  * lettering of the area-name banners ("South Hyrule Field"): glyph bank 8
  * of gUnk_08109248, two 8x16 cells per glyph, replayed exactly like
  * ShowTextBox's stylized path (sub_0805F9A0 -> sub_0805F25C banks>4 ->

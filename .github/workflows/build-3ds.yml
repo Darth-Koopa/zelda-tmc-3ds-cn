@@ -3,7 +3,7 @@ name: Build 3DS
 on:
   push:
     branches:
-      - main
+      - bottom-screen
   pull_request:
   workflow_dispatch:
 
