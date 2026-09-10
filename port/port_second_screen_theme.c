@@ -2092,59 +2092,131 @@ static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
     }
 }
 
+static const uint8_t kTmcFont5x7[][7] = {
+    { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, /* 0 */
+    { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* 1 */
+    { 0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F }, /* 2 */
+    { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E }, /* 3 */
+    { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 }, /* 4 */
+    { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E }, /* 5 */
+    { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E }, /* 6 */
+    { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 }, /* 7 */
+    { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, /* 8 */
+    { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C }, /* 9 */
+    { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* A */
+    { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E }, /* B */
+    { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E }, /* C */
+    { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E }, /* D */
+    { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F }, /* E */
+    { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 }, /* F */
+    { 0x0E, 0x11, 0x10, 0x13, 0x11, 0x11, 0x0F }, /* G */
+    { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* H */
+    { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* I */
+    { 0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C }, /* J */
+    { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 }, /* K */
+    { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F }, /* L */
+    { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 }, /* M */
+    { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 }, /* N */
+    { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* O */
+    { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 }, /* P */
+    { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D }, /* Q */
+    { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 }, /* R */
+    { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E }, /* S */
+    { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 }, /* T */
+    { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* U */
+    { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 }, /* V */
+    { 0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11 }, /* W */
+    { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 }, /* X */
+    { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 }, /* Y */
+    { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F }, /* Z */
+    { 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00 }, /* - */
+    { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 }, /* / */
+    { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C }, /* . */
+    { 0x00, 0x04, 0x00, 0x04, 0x04, 0x04, 0x04 }, /* ! */
+    { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 }, /* ? */
+    { 0x00, 0x04, 0x00, 0x04, 0x00, 0x04, 0x00 }, /* : */
+    { 0x06, 0x04, 0x08, 0x08, 0x08, 0x04, 0x06 }, /* [ */
+    { 0x0C, 0x04, 0x02, 0x02, 0x02, 0x04, 0x0C }, /* ] */
+};
+
+static int TmcAsciiGlyphIndex(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'Z') return 10 + (c - 'A');
+    if (c >= 'a' && c <= 'z') return 10 + (c - 'a');
+    if (c == '-') return 36;
+    if (c == '/') return 37;
+    if (c == '.') return 38;
+    if (c == '!') return 39;
+    if (c == '?') return 40;
+    if (c == ':') return 41;
+    if (c == '[') return 42;
+    if (c == ']') return 43;
+    return -1;
+}
+
 static void TmcDrawAscii5x7(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                             int32_t x, int32_t y, int32_t scale, char c, uint32_t color) {
-    /* Minimal fallback used only for ASCII mixed into JP/Chinese labels. */
-    static const uint8_t k[] = {
-        0x7E,0x81,0x81,0x81,0x81,0x81,0x7E, /* 0 */
-        0x18,0x38,0x18,0x18,0x18,0x18,0x7E, /* 1 */
-        0x7E,0x81,0x01,0x0E,0x30,0x40,0xFF, /* 2 */
-        0x7E,0x81,0x01,0x3E,0x01,0x81,0x7E, /* 3 */
-        0x06,0x0A,0x12,0x22,0x7F,0x02,0x02, /* 4 */
-        0xFF,0x80,0xFE,0x01,0x01,0x81,0x7E, /* 5 */
-        0x3E,0x40,0x80,0xFE,0x81,0x81,0x7E, /* 6 */
-        0xFF,0x01,0x02,0x04,0x08,0x10,0x10, /* 7 */
-        0x7E,0x81,0x81,0x7E,0x81,0x81,0x7E, /* 8 */
-        0x7E,0x81,0x81,0x7F,0x01,0x02,0x7C, /* 9 */
-    };
-    int i, r, col;
-    if (c == ' ') return;
-    if (c >= '0' && c <= '9') {
-        const uint8_t* g = &k[(c - '0') * 7];
-        for (r = 0; r < 7; ++r) for (col = 0; col < 7; ++col) if (g[r] & (0x40 >> col))
+    int gi = TmcAsciiGlyphIndex(c);
+    int r, col, i, j;
+    if (gi < 0 || pixels == NULL) return;
+    for (r = 0; r < 7; ++r) {
+        uint8_t bits = kTmcFont5x7[gi][r];
+        for (col = 0; col < 5; ++col) {
+            if ((bits & (0x10u >> col)) == 0) continue;
             for (i = 0; i < scale; ++i) {
                 int32_t dy = y + r * scale + i;
-                int j;
                 if (dy < 0 || dy >= bufH) continue;
-                for (j = 0; j < scale; ++j) { int32_t dx = x + col * scale + j; if (dx >= 0 && dx < bufW) pixels[(size_t)dy * stride + dx] = color; }
+                for (j = 0; j < scale; ++j) {
+                    int32_t dx = x + col * scale + j;
+                    if (dx >= 0 && dx < bufW)
+                        pixels[(size_t)dy * (size_t)stride + dx] = color;
+                }
             }
+        }
     }
 }
 
-static int32_t TmcDrawMixedBigText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
-                                   int32_t x, int32_t y, int32_t scale, int style, const char* str) {
+static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                      int32_t x, int32_t y, int32_t scale, int style,
+                                      const uint32_t* pal, const char* str) {
     const char* p = str;
     uint32_t cp;
     int32_t start = x;
-    uint32_t color = (uint32_t)TmcCnBodyColor(style);
+    uint32_t cnColor = pal != NULL && pal[14] != 0 ? pal[14] : TmcCnBodyColor(style);
+    uint32_t asciiColor = cnColor;
+
     if (scale < 1) scale = 1;
+    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
+
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
         if (cell >= 0) {
-            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, color);
+            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, cnColor);
             x += TMC_CN_PX * scale;
         } else if (cp == ' ') {
             x += TMC_CN_SPACE_ADVANCE * scale;
         } else if (cp < 0x80 && sBigFontOk) {
             char tmp[2] = {(char)cp, 0};
-            x += DrawBigTextPal(pixels, bufW, bufH, stride, x, y, scale,
-                                sBigPal[style >= 0 && style < SS_TEXT_STYLE_COUNT ? style : SS_TEXT_INK], tmp);
+            x += DrawBigTextPal(pixels, bufW, bufH, stride, x, y, scale, pal, tmp);
         } else if (cp < 0x80) {
-            TmcDrawAscii5x7(pixels, bufW, bufH, stride, x, y + 4 * scale, scale, (char)cp, color);
-            x += 6 * scale;
+            /* This is the same 5x7 face used by port_second_screen.c's
+             * JP fallback. Unlike v1.1 it covers A-Z, so JP values such as
+             * BILINEAR/STRETCH/SHOW/OFF remain visible. */
+            int32_t asciiScale = scale;
+            TmcDrawAscii5x7(pixels, bufW, bufH, stride, x, y + 4 * asciiScale,
+                            asciiScale, (char)cp, asciiColor);
+            x += 6 * asciiScale;
         }
     }
     return x - start;
+}
+
+static int32_t TmcDrawMixedBigText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                   int32_t x, int32_t y, int32_t scale, int style, const char* str) {
+    const uint32_t* pal;
+    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
+    pal = sBigPal[style];
+    return TmcDrawMixedBigTextPal(pixels, bufW, bufH, stride, x, y, scale, style, pal, str);
 }
 
 /* -------------------------------------------------------------------- */
@@ -2371,7 +2443,7 @@ int Port_SecondScreenTheme_DrawMenuButton(uint32_t* pixels, int32_t bufW, int32_
                 /* The body/shade roles cover glyph rows 2..14, so the box
                  * top sits two rows above the visible band's center. */
                 ty = y + (h - BIG_INK_ROWS * ls) / 2 - 2 * ls;
-                DrawBigTextPal(pixels, bufW, bufH, stride, tx, ty, ls, sBtnPal, label);
+                TmcDrawMixedBigTextPal(pixels, bufW, bufH, stride, tx, ty, ls, SS_TEXT_NAVY, sBtnPal, label);
             }
         }
 

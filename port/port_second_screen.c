@@ -1916,7 +1916,7 @@ static int SettingsPageRows(int page, uint8_t* out) {
 
 static const char* SettingsPageTitle(int page) {
     switch (page) {
-        case SS_SETTINGS_SCREEN: return "屏幕";
+        case SS_SETTINGS_SCREEN: return "[屏幕]";
         case SS_SETTINGS_GAMEPLAY: return "游戏";
         case SS_SETTINGS_DEVELOPER: return "开发者";
         case SS_SETTINGS_OVERLAY: return "叠加";
