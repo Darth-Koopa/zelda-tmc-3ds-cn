@@ -120,12 +120,12 @@ extern double Port_PPU_3DS_AverageFps(void);
  * "B<1-n>" — e.g. Deepwood {3 floors, highest 3} = 1F, B1, B2. */
 static const char* const kDungeonNames[7] = {
     NULL,
-    "海鲁森林神殿",
-    "火焰洞窟",
-    "风之堡垒",
-    "水滴神殿",
+    "森之祠堂",
+    "火之洞窟",
+    "风之要塞",
+    "露水神殿",
     "风之宫殿",
-    "黑暗海鲁城堡",
+    "暗海拉鲁城堡",
 };
 static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 
@@ -1802,7 +1802,7 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "顶部 HUD",     "宽屏",        "跟随镜头",   "风之印标记",
+    "顶部HUD",     "宽屏",        "跟随镜头",   "风之印标记",
     "自动返回楼层", "加速倍率",   "主音量",      "自动存档",
     "色彩校正", "显示帧率",       "按住推进文本",
     "随机化",     "面板背景",     "交换屏幕",
@@ -2124,13 +2124,13 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[4] = { "屏幕", "游戏", "开发者", "随机" };
+        static const char* const labels[4] = { "屏幕", "游戏玩法", "开发者", "随机化" };
         static const uint8_t pages[4] = {
             SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
         };
         const int rootRows = 4;
 #else
-        static const char* const labels[3] = { "屏幕", "游戏", "开发者" };
+        static const char* const labels[3] = { "屏幕", "游戏玩法", "开发者" };
         static const uint8_t pages[3] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER };
         const int rootRows = 3;
 #endif

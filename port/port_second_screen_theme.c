@@ -2043,16 +2043,21 @@ static uint32_t TmcCnBodyColor(int style) {
     }
 }
 
+#define TMC_CN_LETTER_SPACING 1
+
 static int32_t TmcCnWidth(const char* str, int32_t scale) {
     const char* p = str;
     uint32_t cp;
     int32_t w = 0;
     if (scale < 1) scale = 1;
     if (str == NULL) return 0;
+    int hasGlyph = 0;
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
         if (cell >= 0) {
+            if (hasGlyph) w += TMC_CN_LETTER_SPACING * scale;
             w += (int32_t)kTmcCnAdvance[cell] * scale;
+            hasGlyph = 1;
         }
     }
     return w;
@@ -2135,12 +2140,15 @@ static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bu
     }
 
     if (str == NULL) return 0;
+    int hasGlyph = 0;
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
         if (cell < 0) continue;
+        if (hasGlyph) x += TMC_CN_LETTER_SPACING * scale;
         TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell,
                        color, outlineColor, drawOutline);
         x += (int32_t)kTmcCnAdvance[cell] * scale;
+        hasGlyph = 1;
     }
     return x - start;
 }
