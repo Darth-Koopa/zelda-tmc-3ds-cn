@@ -10,9 +10,6 @@
 #include <math.h>
 #include <string.h>
 
-static const u8* BigGlyphData(char c);
-static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
-                              int32_t y, int32_t scale, const uint32_t* pal, const char* str);
 
 
 /*
@@ -300,8 +297,6 @@ static uint32_t sMsgPal[16];
  * art: 1 navy outline, 10..13 shades, 14 body, 15 black rim. Styles other
  * than the authentic white recolor those roles through the message
  * palette (sBigPal below). */
-static const u8* sBigFontGlyphs = NULL;
-static int sBigFontOk = 0;
 static uint32_t sBigPal[SS_TEXT_STYLE_COUNT][16]; /* value -> RGBA, 0 = skip */
 
 /* Menu button: the composed SAVE plate, the sub-rect of it the plate itself
@@ -1076,8 +1071,6 @@ static void BuildMenuTheme(void) {
         sBigPal[SS_TEXT_NAVY][12] = sBigPal[SS_TEXT_NAVY][13] = sBigPal[SS_TEXT_NAVY][10] =
             sBigPal[SS_TEXT_NAVY][11] = bank1[2];
         sColors[SSC_BANNER_NAVY] = bank1[1];
-        sBigFontGlyphs = (const u8*)gUnk_08109248[8];
-        sBigFontOk = sBigFontGlyphs != NULL && !REGION_IS_JP;
     }
 }
 
@@ -2055,19 +2048,11 @@ static int32_t TmcCnWidth(const char* str, int32_t scale) {
     uint32_t cp;
     int32_t w = 0;
     if (scale < 1) scale = 1;
+    if (str == NULL) return 0;
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
-        if (cell >= 0) w += TMC_CN_PX * scale;
-        else if (cp == ' ') w += TMC_CN_SPACE_ADVANCE * scale;
-        else if (cp < 0x80 && sBigFontOk) {
-            const u8* g = BigGlyphData((char)cp);
-            int32_t gs, gw, adv;
-            GlyphMetrics(g, &gs, &gw); adv = gw;
-            GlyphMetrics(g + 64, &gs, &gw); adv += gw;
-            if (adv > 1) adv--;
-            w += adv * scale;
-        } else if (cp < 0x80) {
-            w += 6 * scale;
+        if (cell >= 0) {
+            w += (int32_t)kTmcCnAdvance[cell] * scale;
         }
     }
     return w;
@@ -2080,25 +2065,23 @@ static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
     int py, px, ex, ey, ox, oy;
     if (scale < 1) scale = 1;
 
-    /* Draw the outline first. This intentionally stays inside the same 12px
-     * cell; the source raster is centered so the one-pixel rim does not clip
-     * normal glyphs. Button labels pass drawOutline=0 because the original
-     * button font has no outline. */
     if (drawOutline && outline != 0) {
+        /* Outline is a true 8-neighbour dilation. Unlike v2.1 it is allowed
+         * to extend one pixel outside the glyph cell, which is necessary for
+         * a visible 1px outline around glyphs that touch a 12px edge. */
         for (py = 0; py < TMC_CN_PX; ++py) {
             for (px = 0; px < TMC_CN_PX; ++px) {
                 if ((src[py * TMC_CN_PX + px] >> 24) == 0) continue;
                 for (oy = -1; oy <= 1; ++oy) {
                     for (ox = -1; ox <= 1; ++ox) {
                         if (ox == 0 && oy == 0) continue;
-                        int32_t bx = px + ox, by = py + oy;
-                        if (bx < 0 || bx >= TMC_CN_PX || by < 0 || by >= TMC_CN_PX) continue;
                         for (ey = 0; ey < scale; ++ey) {
-                            int32_t dy = y + by * scale + ey;
+                            int32_t dy = y + (py + oy) * scale + ey;
                             if (dy < 0 || dy >= bufH) continue;
                             for (ex = 0; ex < scale; ++ex) {
-                                int32_t dx = x + bx * scale + ex;
-                                if (dx >= 0 && dx < bufW) pixels[(size_t)dy * (size_t)stride + dx] = outline;
+                                int32_t dx = x + (px + ox) * scale + ex;
+                                if (dx >= 0 && dx < bufW)
+                                    pixels[(size_t)dy * (size_t)stride + dx] = outline;
                             }
                         }
                     }
@@ -2115,89 +2098,6 @@ static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
                 if (dy < 0 || dy >= bufH) continue;
                 for (ex = 0; ex < scale; ++ex) {
                     int32_t dx = x + px * scale + ex;
-                    if (dx >= 0 && dx < bufW) pixels[(size_t)dy * (size_t)stride + dx] = color;
-                }
-            }
-        }
-    }
-}
-
-static const uint8_t kTmcFont5x7[][7] = {
-    { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, /* 0 */
-    { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* 1 */
-    { 0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F }, /* 2 */
-    { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E }, /* 3 */
-    { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 }, /* 4 */
-    { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E }, /* 5 */
-    { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E }, /* 6 */
-    { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 }, /* 7 */
-    { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, /* 8 */
-    { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C }, /* 9 */
-    { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* A */
-    { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E }, /* B */
-    { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E }, /* C */
-    { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E }, /* D */
-    { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F }, /* E */
-    { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 }, /* F */
-    { 0x0E, 0x11, 0x10, 0x13, 0x11, 0x11, 0x0F }, /* G */
-    { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* H */
-    { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* I */
-    { 0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C }, /* J */
-    { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 }, /* K */
-    { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F }, /* L */
-    { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 }, /* M */
-    { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 }, /* N */
-    { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* O */
-    { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 }, /* P */
-    { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D }, /* Q */
-    { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 }, /* R */
-    { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E }, /* S */
-    { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 }, /* T */
-    { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* U */
-    { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 }, /* V */
-    { 0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11 }, /* W */
-    { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 }, /* X */
-    { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 }, /* Y */
-    { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F }, /* Z */
-    { 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00 }, /* - */
-    { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 }, /* / */
-    { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C }, /* . */
-    { 0x00, 0x04, 0x00, 0x04, 0x04, 0x04, 0x04 }, /* ! */
-    { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 }, /* ? */
-    { 0x00, 0x04, 0x00, 0x04, 0x00, 0x04, 0x00 }, /* : */
-    { 0x06, 0x04, 0x08, 0x08, 0x08, 0x04, 0x06 }, /* [ */
-    { 0x0C, 0x04, 0x02, 0x02, 0x02, 0x04, 0x0C }, /* ] */
-};
-
-static int TmcAsciiGlyphIndex(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'Z') return 10 + (c - 'A');
-    if (c >= 'a' && c <= 'z') return 10 + (c - 'a');
-    if (c == '-') return 36;
-    if (c == '/') return 37;
-    if (c == '.') return 38;
-    if (c == '!') return 39;
-    if (c == '?') return 40;
-    if (c == ':') return 41;
-    if (c == '[') return 42;
-    if (c == ']') return 43;
-    return -1;
-}
-
-static void TmcDrawAscii5x7(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
-                            int32_t x, int32_t y, int32_t scale, char c, uint32_t color) {
-    int gi = TmcAsciiGlyphIndex(c);
-    int r, col, i, j;
-    if (gi < 0 || pixels == NULL) return;
-    for (r = 0; r < 7; ++r) {
-        uint8_t bits = kTmcFont5x7[gi][r];
-        for (col = 0; col < 5; ++col) {
-            if ((bits & (0x10u >> col)) == 0) continue;
-            for (i = 0; i < scale; ++i) {
-                int32_t dy = y + r * scale + i;
-                if (dy < 0 || dy >= bufH) continue;
-                for (j = 0; j < scale; ++j) {
-                    int32_t dx = x + col * scale + j;
                     if (dx >= 0 && dx < bufW)
                         pixels[(size_t)dy * (size_t)stride + dx] = color;
                 }
@@ -2212,13 +2112,19 @@ static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bu
     const char* p = str;
     uint32_t cp;
     int32_t start = x;
-    uint32_t cnColor = pal != NULL && pal[14] != 0 ? pal[14] : TmcCnBodyColor(style);
+    uint32_t color = pal != NULL && pal[14] != 0 ? pal[14] : TmcCnBodyColor(style);
     uint32_t outlineColor = 0;
-    int cnOutline = 0;
-    uint32_t asciiColor = cnColor;
+    int drawOutline = 0;
 
+    if (scale < 1) scale = 1;
+    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
+
+    /* The real JP bank-8 font carries a shade/outline treatment on ordinary
+     * menu lettering. Recreate the same role with a pixel dilation for all
+     * non-button text. Button labels deliberately stay flat like the source
+     * plate's own label treatment. */
     if (pal != sBtnPal) {
-        cnOutline = 1;
+        drawOutline = 1;
         if (pal != NULL && pal[1] != 0) {
             outlineColor = pal[1];
         } else if (style == SS_TEXT_INK || style == SS_TEXT_NAVY) {
@@ -2228,28 +2134,13 @@ static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bu
         }
     }
 
-    if (scale < 1) scale = 1;
-    if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
-
+    if (str == NULL) return 0;
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
-        if (cell >= 0) {
-            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, cnColor, outlineColor, cnOutline);
-            x += TMC_CN_PX * scale;
-        } else if (cp == ' ') {
-            x += TMC_CN_SPACE_ADVANCE * scale;
-        } else if (cp < 0x80 && sBigFontOk) {
-            char tmp[2] = {(char)cp, 0};
-            x += DrawBigTextPal(pixels, bufW, bufH, stride, x, y, scale, pal, tmp);
-        } else if (cp < 0x80) {
-            /* This is the same 5x7 face used by port_second_screen.c's
-             * JP fallback. Unlike v1.1 it covers A-Z, so JP values such as
-             * BILINEAR/STRETCH/SHOW/OFF remain visible. */
-            int32_t asciiScale = scale;
-            TmcDrawAscii5x7(pixels, bufW, bufH, stride, x, y + 4 * asciiScale,
-                            asciiScale, (char)cp, asciiColor);
-            x += 6 * asciiScale;
-        }
+        if (cell < 0) continue;
+        TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell,
+                       color, outlineColor, drawOutline);
+        x += (int32_t)kTmcCnAdvance[cell] * scale;
     }
     return x - start;
 }
@@ -2262,91 +2153,14 @@ static int32_t TmcDrawMixedBigText(uint32_t* pixels, int32_t bufW, int32_t bufH,
     return TmcDrawMixedBigTextPal(pixels, bufW, bufH, stride, x, y, scale, style, pal, str);
 }
 
-/* -------------------------------------------------------------------- */
-/*  Stylized banner font (bank 8)                                        */
-/* -------------------------------------------------------------------- */
-
-/* ASCII passthrough like the small font — sub_0805F9A0 maps a non-JP
- * character to bank 8 at its own code. Control chars clamp to '?'; the
- * bank's coverage is A-Z a-z 0-9 - . , : ' ! ? (checked on USA — codes
- * like % / ( ) hold kana there, so panel strings avoid them). */
-static const u8* BigGlyphData(char c) {
-    u8 code = (u8)c;
-    if (code < 0x20) {
-        code = '?';
-    }
-    return sBigFontGlyphs + (size_t)code * 128u;
-}
-
-#define BIG_SPACE_ADVANCE 8 /* the tokenizer's fixed word gap (case 0xc) */
-#define BIG_GLYPH_ROWS 16 /* stylized cell height; ink spans rows 1..15 */
-#define BIG_INK_ROWS 13   /* rows the body/shade roles actually cover */
-
 int32_t Port_SecondScreenTheme_BigTextWidth(const char* str, int32_t scale) {
     if (!sBuilt || str == NULL) return 0;
     return TmcCnWidth(str, scale);
 }
 
-/* Shared body of the stylized draw, taking the value->RGBA table directly so
- * the menu button can letter its labels in the plate's own tones without
- * those becoming a public SS_TEXT_* style. */
-static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
-                              int32_t y, int32_t scale, const uint32_t* pal, const char* str) {
-    int32_t startX = x;
-    if (!sBuilt || !sBigFontOk || str == NULL) {
-        return 0;
-    }
-    if (scale < 1) {
-        scale = 1;
-    }
-
-    for (; *str; str++) {
-        const u8* glyph;
-        int32_t cell, adv = 0;
-        if (*str == ' ') {
-            x += TMC_CN_SPACE_ADVANCE * scale;
-            continue;
-        }
-        glyph = BigGlyphData(*str);
-        /* Two 8x16 cells drawn back to back at their own metric spans —
-         * the exact double sub_0805F820 call of sub_0805F7DC. Zero-value
-         * pixels are skipped (sub_080026F2's transparent merge), which is
-         * also what lets the shared outline columns overlap cleanly. */
-        for (cell = 0; cell < 2; cell++) {
-            const u8* cp = glyph + cell * 64;
-            int32_t gs, gw, col, row2, ex, ey;
-            GlyphMetrics(cp, &gs, &gw);
-            for (row2 = 1; row2 < 16; row2++) {
-                for (col = gs; col < gs + gw && col < 8; col++) {
-                    u8 packed = cp[row2 * 4 + (col >> 1)];
-                    u8 pix = (col & 1) ? (u8)(packed >> 4) : (u8)(packed & 0x0Fu);
-                    uint32_t rgba = pal[pix];
-                    if (pix == 0 || rgba == 0) {
-                        continue;
-                    }
-                    for (ey = 0; ey < scale; ey++) {
-                        int32_t dy = y + row2 * scale + ey;
-                        if (dy < 0 || dy >= bufH) {
-                            continue;
-                        }
-                        for (ex = 0; ex < scale; ex++) {
-                            int32_t dx = x + (adv + col - gs) * scale + ex;
-                            if (dx >= 0 && dx < bufW) {
-                                pixels[(size_t)dy * (size_t)stride + dx] = rgba;
-                            }
-                        }
-                    }
-                }
-            }
-            adv += gw;
-        }
-        if (adv > 1) {
-            adv--; /* next glyph overlaps this one's outline column */
-        }
-        x += adv * scale;
-    }
-    return x - startX;
-}
+/* The independent Vonwaon font is a 12px design grid. Menu-button labels
+ * use the same grid but stay flat (no outline), matching the plate label role. */
+#define BIG_INK_ROWS TMC_CN_PX
 
 /* -------------------------------------------------------------------- */
 /*  Menu button / R glyph / action label                                 */

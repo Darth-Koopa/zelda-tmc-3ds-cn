@@ -198,13 +198,13 @@ PortDumpStateResult Port_DumpState_ReadLatest(const char* dumpsDirectory, int ac
 
 const char* Port_DumpState_ResultLabel(PortDumpStateResult result) {
     switch (result) {
-        case PORT_DUMP_STATE_OK: return "LOADED";
-        case PORT_DUMP_STATE_OK_LEGACY: return "LEGACY";
-        case PORT_DUMP_STATE_NO_DUMP: return "NO DUMP";
-        case PORT_DUMP_STATE_NO_STATE: return "NO STATE";
-        case PORT_DUMP_STATE_INVALID: return "INVALID";
-        case PORT_DUMP_STATE_WRONG_REGION: return "WRONG ROM";
-        case PORT_DUMP_STATE_IO_ERROR: return "I O ERROR";
+        case PORT_DUMP_STATE_OK: return "已读取";
+        case PORT_DUMP_STATE_OK_LEGACY: return "旧格式";
+        case PORT_DUMP_STATE_NO_DUMP: return "无转储";
+        case PORT_DUMP_STATE_NO_STATE: return "无状态";
+        case PORT_DUMP_STATE_INVALID: return "无效";
+        case PORT_DUMP_STATE_WRONG_REGION: return "ROM不匹配";
+        case PORT_DUMP_STATE_IO_ERROR: return "I/O错误";
     }
-    return "ERROR";
+    return "错误";
 }

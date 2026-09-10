@@ -602,10 +602,6 @@ static int32_t DrawTextStr(const SSurf* s, const char* str, int32_t x, int32_t y
     return cx - x;
 }
 
-static int32_t TextWidthPx(const char* str, int32_t scale) {
-    return (int32_t)strlen(str) * 6 * scale - scale;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Menu text (the game's stylized banner font)                        */
 /* ------------------------------------------------------------------ */
@@ -617,39 +613,16 @@ static int32_t TextWidthPx(const char* str, int32_t scale) {
  * whole box, so vertical centering uses the box middle at 8*ms. The 5x7
  * stand-in only appears pre-ROM; it maps ms onto a similar visual size.
  * The face covers A-Z a-z 0-9 - . , : ' ! ? — keep strings inside that. */
-#define MENU_TEXT_BOX 16
-
-static int32_t FallbackScale5x7(int32_t ms) {
-    int32_t f = ms * 2;
-    return f < 1 ? 1 : f;
-}
+#define MENU_TEXT_BOX 12
 
 static int32_t MenuTextWidth(const char* str, int32_t ms) {
-    int32_t w = Port_SecondScreenTheme_BigTextWidth(str, ms);
-    if (w == 0 && str != NULL && *str != '\0') {
-        w = TextWidthPx(str, FallbackScale5x7(ms));
-    }
-    return w;
+    return Port_SecondScreenTheme_BigTextWidth(str, ms);
 }
 
 /* yTop is the glyph-box top. Returns the advance. */
 static int32_t MenuTextDraw(const SSurf* s, const char* str, int32_t x, int32_t yTop, int32_t ms,
                             int style) {
-    int32_t adv =
-        Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, yTop, ms, style, str);
-    if (adv == 0 && str != NULL && *str != '\0') {
-        /* Pre-ROM stand-in in the matching palette role. */
-        static const int kColorId[SS_TEXT_STYLE_COUNT] = { SSC_MENU_INK, SSC_MENU_WHITE, SSC_MENU_RED,
-                                                           SSC_RUPEE_GREEN, SSC_BANNER_NAVY };
-        uint32_t color = Port_SecondScreenTheme_Color(kColorId[style >= 0 && style < SS_TEXT_STYLE_COUNT
-                                                                  ? style
-                                                                  : SS_TEXT_INK]);
-        uint32_t outline = (style == SS_TEXT_INK || style == SS_TEXT_NAVY)
-                               ? Port_SecondScreenTheme_Color(SSC_MENU_CREAM)
-                               : Port_SecondScreenTheme_Color(SSC_MENU_BLACK);
-        adv = DrawTextStr(s, str, x, yTop + 3 * ms, FallbackScale5x7(ms), color, outline);
-    }
-    return adv;
+    return Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, yTop, ms, style, str);
 }
 
 /* Centered helper: centers the string's caps on (cx, cy). */
@@ -1829,7 +1802,7 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "顶部HUD",      "宽屏",        "跟随镜头",   "风印标记",
+    "顶部 HUD",     "宽屏",        "跟随镜头",   "风之印标记",
     "自动返回楼层", "加速倍率",   "主音量",      "自动存档",
     "色彩校正", "显示帧率",       "按住推进文本",
     "随机化",     "面板背景",     "交换屏幕",
@@ -1846,7 +1819,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
  * a brightness ramp (DARK sits mid-list). Every word here is inside
  * SS_SET_WIDEST_VALUE, so none of them widen the value chip. */
 static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
-    "图案", "奶油白", "深色", "暗淡", "石材", "板岩", "藏青"
+    "图案", "奶油色", "深色", "暗淡", "石材", "板岩", "藏青"
 };
 
 /* Reserve only the width a row can actually use. A single global value
@@ -1917,8 +1890,8 @@ static int SettingsPageRows(int page, uint8_t* out) {
 static const char* SettingsPageTitle(int page) {
     switch (page) {
         case SS_SETTINGS_SCREEN: return "屏幕";
-        case SS_SETTINGS_GAMEPLAY: return "游戏";
-        case SS_SETTINGS_DEVELOPER: return "开发";
+        case SS_SETTINGS_GAMEPLAY: return "游戏玩法";
+        case SS_SETTINGS_DEVELOPER: return "开发者";
         case SS_SETTINGS_OVERLAY: return "叠加层";
         case SS_SETTINGS_RANDOMIZER: return "随机化";
         default: return "设置";
@@ -2029,7 +2002,7 @@ static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* sn
     double currentFps = Port_PPU_3DS_CurrentFps();
     double averageFps = Port_PPU_3DS_AverageFps();
     snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION);
-    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "新机型" : "旧机型");
+    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "新3DS" : "旧3DS");
     snprintf(values[2], sizeof(values[2]), "%.0f", currentFps);
     snprintf(values[3], sizeof(values[3]), "%.0f", averageFps);
     snprintf(values[4], sizeof(values[4]), "%u", Platform3DS_Core1TimeLimit());
@@ -2065,8 +2038,7 @@ static int GetSettingState(int row, char* out, int outCap) {
     const char* txt = "关闭";
     switch (row) {
         case SS_SET_TOP_HUD:
-            /* The row states what the top screen DOES: SHOW is the (red)
-             * default, HIDE hands vitals duty to this panel. */
+            /* The row states what the top screen does. */
             on = !Port_Config_GetHideTopHud();
             txt = on ? "显示" : "隐藏";
             break;
@@ -2123,7 +2095,7 @@ static int GetSettingState(int row, char* out, int outCap) {
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
-        txt = on ? "开" : "关闭";
+        txt = on ? "开启" : "关闭";
     }
     snprintf(out, (size_t)outCap, "%s", txt);
     return on;
@@ -2309,7 +2281,7 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     MenuTextCentered(s, "读取最新转储？", s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
 
     static const char* const lines[] = {
-        "DUMPS文件夹中的最新转储将替换",
+        "转储文件夹中的最新转储将替换",
         "当前游戏状态。",
         "未保存的进度可能会丢失。",
         "游戏将重启。",
