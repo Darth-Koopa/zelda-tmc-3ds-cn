@@ -1829,12 +1829,12 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "上方",          "宽屏",        "镜头",       "风印",
-    "楼层返回", "涡轮速度",       "音量",    "自动保存",
-    "色彩校正", "显示帧率",           "按键推进",
-    "随机",       "面板背景",     "交换屏幕",
+    "顶部HUD",      "宽屏",        "跟随镜头",   "风印标记",
+    "自动返回楼层", "加速倍率",   "主音量",      "自动存档",
+    "色彩校正", "显示帧率",       "按住推进文本",
+    "随机化",     "面板背景",     "交换屏幕",
 #ifdef TMC_3DS
-    "宽高比",     "显示模式",
+    "宽高比",     "显示方式",
 #endif
 };
 
@@ -1846,7 +1846,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
  * a brightness ramp (DARK sits mid-list). Every word here is inside
  * SS_SET_WIDEST_VALUE, so none of them widen the value chip. */
 static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
-    "图案", "奶油", "暗", "昏暗", "石", "板岩", "海军蓝"
+    "图案", "奶油白", "深色", "暗淡", "石材", "板岩", "藏青"
 };
 
 /* Reserve only the width a row can actually use. A single global value
@@ -1916,11 +1916,11 @@ static int SettingsPageRows(int page, uint8_t* out) {
 
 static const char* SettingsPageTitle(int page) {
     switch (page) {
-        case SS_SETTINGS_SCREEN: return "[屏幕]";
+        case SS_SETTINGS_SCREEN: return "屏幕";
         case SS_SETTINGS_GAMEPLAY: return "游戏";
-        case SS_SETTINGS_DEVELOPER: return "开发者";
-        case SS_SETTINGS_OVERLAY: return "叠加";
-        case SS_SETTINGS_RANDOMIZER: return "随机";
+        case SS_SETTINGS_DEVELOPER: return "开发";
+        case SS_SETTINGS_OVERLAY: return "叠加层";
+        case SS_SETTINGS_RANDOMIZER: return "随机化";
         default: return "设置";
     }
 }
@@ -2035,10 +2035,10 @@ static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* sn
     snprintf(values[4], sizeof(values[4]), "%u", Platform3DS_Core1TimeLimit());
     snprintf(values[5], sizeof(values[5]), "%s", Port_Config_WidescreenEnabled() ? "宽屏" : "原始");
 #else
-    for (int i = 0; i < 6; ++i) snprintf(values[i], sizeof(values[i]), "N A");
+    for (int i = 0; i < 6; ++i) snprintf(values[i], sizeof(values[i]), "无");
 #endif
 #else
-    for (int i = 0; i < 6; ++i) snprintf(values[i], sizeof(values[i]), "N A");
+    for (int i = 0; i < 6; ++i) snprintf(values[i], sizeof(values[i]), "无");
 #endif
     snprintf(values[6], sizeof(values[6]), "%02X", snap->area);
     snprintf(values[7], sizeof(values[7]), "%02X", snap->room);
@@ -2079,7 +2079,7 @@ static int GetSettingState(int row, char* out, int outCap) {
             snprintf(out, (size_t)outCap, "X%u", Port_Config_GetTurboMultiplier());
             return 1;
 #else
-            snprintf(out, (size_t)outCap, "N A");
+            snprintf(out, (size_t)outCap, "无");
             return 0;
 #endif
         case SS_SET_VOLUME: {
@@ -2110,7 +2110,7 @@ static int GetSettingState(int row, char* out, int outCap) {
              * fell back to a normal launch). */
             int want = Port_Config_GetSecondScreenSwap() ? 1 : 0;
             int active = Port_SecondScreen_GameOnSecondaryDisplay();
-            snprintf(out, (size_t)outCap, "%s", want != active ? "重启" : (want ? "ON" : "关闭"));
+            snprintf(out, (size_t)outCap, "%s", want != active ? "重启" : (want ? "开" : "关闭"));
             return want;
         }
 #ifdef TMC_3DS
@@ -2123,7 +2123,7 @@ static int GetSettingState(int row, char* out, int outCap) {
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
-        txt = on ? "ON" : "关闭";
+        txt = on ? "开" : "关闭";
     }
     snprintf(out, (size_t)outCap, "%s", txt);
     return on;
@@ -2306,14 +2306,13 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
-    MenuTextCentered(s, "LOAD LATEST DUMP?", s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
+    MenuTextCentered(s, "读取最新转储？", s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
 
     static const char* const lines[] = {
-        "THE LATEST DUMP IN THE",
-        "DUMPS FOLDER WILL REPLACE",
-        "THE CURRENT GAME STATE.",
-        "UNSAVED PROGRESS MAY BE LOST.",
-        "THE GAME WILL RESTART.",
+        "DUMPS文件夹中的最新转储将替换",
+        "当前游戏状态。",
+        "未保存的进度可能会丢失。",
+        "游戏将重启。",
     };
     int32_t textScale = (int32_t)(1.55f * u);
     if (textScale < 1) textScale = 1;
@@ -2341,16 +2340,16 @@ static void PaintRandomizerConfirmation(const SSurf* s, TargetList* tl, float u,
 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
-    MenuTextCentered(s, enable ? "ENABLE RANDOMIZER" : "DISABLE RANDOMIZER", s->w / 2.0f,
+    MenuTextCentered(s, enable ? "启用随机化" : "禁用随机化", s->w / 2.0f,
                      layout.titleY, titleScale, SS_TEXT_NAVY);
 
     static const char* const lines[] = {
-        "RANDOMIZER REQUIRES A NEW GAME.",
-        "THE ACTIVE PROFILE SAVE,",
-        "AUTOSAVES, SAVESTATES, AND",
-        "RANDOMIZER DATA WILL BE",
-        "DELETED. THE ROM IS KEPT.",
-        "THE GAME WILL RESTART.",
+        "随机化需要新游戏。",
+        "当前配置存档、",
+        "自动存档、状态存档以及",
+        "随机化数据将被",
+        "删除，ROM文件不会删除。",
+        "游戏将重启。",
     };
     int32_t textScale = (int32_t)(1.55f * u);
     if (textScale < 1) textScale = 1;

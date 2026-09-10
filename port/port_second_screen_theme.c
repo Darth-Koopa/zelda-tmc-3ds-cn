@@ -2074,9 +2074,39 @@ static int32_t TmcCnWidth(const char* str, int32_t scale) {
 }
 
 static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
-                           int32_t x, int32_t y, int32_t scale, int cell, uint32_t color) {
+                           int32_t x, int32_t y, int32_t scale, int cell, uint32_t color,
+                           uint32_t outline, int drawOutline) {
     const uint32_t* src = &kTmcCnGlyph[(size_t)cell * TMC_CN_PX * TMC_CN_PX];
-    int py, px, ex, ey;
+    int py, px, ex, ey, ox, oy;
+    if (scale < 1) scale = 1;
+
+    /* Draw the outline first. This intentionally stays inside the same 12px
+     * cell; the source raster is centered so the one-pixel rim does not clip
+     * normal glyphs. Button labels pass drawOutline=0 because the original
+     * button font has no outline. */
+    if (drawOutline && outline != 0) {
+        for (py = 0; py < TMC_CN_PX; ++py) {
+            for (px = 0; px < TMC_CN_PX; ++px) {
+                if ((src[py * TMC_CN_PX + px] >> 24) == 0) continue;
+                for (oy = -1; oy <= 1; ++oy) {
+                    for (ox = -1; ox <= 1; ++ox) {
+                        if (ox == 0 && oy == 0) continue;
+                        int32_t bx = px + ox, by = py + oy;
+                        if (bx < 0 || bx >= TMC_CN_PX || by < 0 || by >= TMC_CN_PX) continue;
+                        for (ey = 0; ey < scale; ++ey) {
+                            int32_t dy = y + by * scale + ey;
+                            if (dy < 0 || dy >= bufH) continue;
+                            for (ex = 0; ex < scale; ++ex) {
+                                int32_t dx = x + bx * scale + ex;
+                                if (dx >= 0 && dx < bufW) pixels[(size_t)dy * (size_t)stride + dx] = outline;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (py = 0; py < TMC_CN_PX; ++py) {
         for (px = 0; px < TMC_CN_PX; ++px) {
             if ((src[py * TMC_CN_PX + px] >> 24) == 0) continue;
@@ -2085,7 +2115,7 @@ static void TmcDrawCnGlyph(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
                 if (dy < 0 || dy >= bufH) continue;
                 for (ex = 0; ex < scale; ++ex) {
                     int32_t dx = x + px * scale + ex;
-                    if (dx >= 0 && dx < bufW) pixels[(size_t)dy * stride + dx] = color;
+                    if (dx >= 0 && dx < bufW) pixels[(size_t)dy * (size_t)stride + dx] = color;
                 }
             }
         }
@@ -2183,7 +2213,20 @@ static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bu
     uint32_t cp;
     int32_t start = x;
     uint32_t cnColor = pal != NULL && pal[14] != 0 ? pal[14] : TmcCnBodyColor(style);
+    uint32_t outlineColor = 0;
+    int cnOutline = 0;
     uint32_t asciiColor = cnColor;
+
+    if (pal != sBtnPal) {
+        cnOutline = 1;
+        if (pal != NULL && pal[1] != 0) {
+            outlineColor = pal[1];
+        } else if (style == SS_TEXT_INK || style == SS_TEXT_NAVY) {
+            outlineColor = sColors[SSC_MENU_CREAM];
+        } else {
+            outlineColor = sColors[SSC_MENU_BLACK];
+        }
+    }
 
     if (scale < 1) scale = 1;
     if (style < 0 || style >= SS_TEXT_STYLE_COUNT) style = SS_TEXT_INK;
@@ -2191,7 +2234,7 @@ static int32_t TmcDrawMixedBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bu
     while (TmcUtf8Next(&p, &cp)) {
         int cell = TmcCnCellOf(cp);
         if (cell >= 0) {
-            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, cnColor);
+            TmcDrawCnGlyph(pixels, bufW, bufH, stride, x, y + 2 * scale, scale, cell, cnColor, outlineColor, cnOutline);
             x += TMC_CN_PX * scale;
         } else if (cp == ' ') {
             x += TMC_CN_SPACE_ADVANCE * scale;
