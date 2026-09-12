@@ -120,12 +120,12 @@ extern double Port_PPU_3DS_AverageFps(void);
  * "B<1-n>" — e.g. Deepwood {3 floors, highest 3} = 1F, B1, B2. */
 static const char* const kDungeonNames[7] = {
     NULL,
-    "森之祠堂",
-    "火之洞窟",
+    "森林神庙",
+    "火焰洞窟",
     "风之要塞",
     "露水神殿",
     "风之宫殿",
-    "暗海拉鲁城堡",
+    "暗海拉尔城",
 };
 static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 
@@ -1018,11 +1018,19 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
  * game floats over its own map screen. Used for the map's view/back
  * affordance. Returns the rect it covered so callers can make it tappable. */
 static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBottom, float u, float* out) {
+    /* Centralize the back-label translation here so every map/quest chip stays
+     * Chinese even if an upstream caller still passes the original English
+     * label (BACK/Back). This also protects future merges from reintroducing
+     * the English button. */
+    const char* displayLabel = label;
+    if (label != NULL && (strcmp(label, "BACK") == 0 || strcmp(label, "Back") == 0 || strcmp(label, "back") == 0)) {
+        displayLabel = "返回";
+    }
     /* Sized as a thumb target rather than as map decoration: this is the only
      * way into a region zoom, and out of the lists the quest tab opens. */
     int32_t ms = (int32_t)(2.6f * u);
     if (ms < 1) ms = 1;
-    int32_t tw = MenuTextWidth(label, ms);
+    int32_t tw = MenuTextWidth(displayLabel, ms);
     float ch = MENU_TEXT_BOX * ms + 22 * u;
     float x0 = cx - tw / 2.0f - 26 * u, x1 = cx + tw / 2.0f + 26 * u;
     float y1 = cyBottom, y0 = y1 - ch;
@@ -1030,7 +1038,7 @@ static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBot
     if (cts < 1) cts = 1;
     Port_SecondScreenTheme_DrawChip(s->px, s->w, s->h, s->stride, (int32_t)x0, (int32_t)y0,
                                     (int32_t)(x1 - x0), (int32_t)(y1 - y0), cts, SS_CHIP_DARK);
-    MenuTextCentered(s, label, cx, (y0 + y1) / 2.0f, ms, SS_TEXT_WHITE);
+    MenuTextCentered(s, displayLabel, cx, (y0 + y1) / 2.0f, ms, SS_TEXT_WHITE);
     out[0] = x0;
     out[1] = y0;
     out[2] = x1;
@@ -1802,7 +1810,7 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "顶部HUD",     "宽屏",        "跟随镜头",   "风之印标记",
+    "顶部HUD",     "宽屏",        "跟随镜头",   "风之印记",
     "自动返回楼层", "加速倍率",   "主音量",      "自动存档",
     "色彩校正", "显示帧率",       "按住推进文本",
     "随机化",     "面板背景",     "交换屏幕",
@@ -1834,7 +1842,7 @@ static const char* SettingValueMinWord(int setting) {
         case SS_SET_SWAP_SCREENS: return "重启";
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO: return "原始";
-        case SS_SET_DISPLAY_STYLE: return "像素完美";
+        case SS_SET_DISPLAY_STYLE: return "完美像素";
 #endif
         default: return "关闭";
     }
@@ -2002,7 +2010,7 @@ static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* sn
     double currentFps = Port_PPU_3DS_CurrentFps();
     double averageFps = Port_PPU_3DS_AverageFps();
     snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION);
-    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "新3DS" : "旧3DS");
+    snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "新3DS" : "老3DS");
     snprintf(values[2], sizeof(values[2]), "%.0f", currentFps);
     snprintf(values[3], sizeof(values[3]), "%.0f", averageFps);
     snprintf(values[4], sizeof(values[4]), "%u", Platform3DS_Core1TimeLimit());
@@ -2165,14 +2173,14 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
                                loadValue, SS_ACT_DEVELOPER_LOAD, u, ts);
         DrawSettingsValueRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "叠加",
+        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "叠加层",
                            SS_SETTINGS_OVERLAY, u, ts);
 #else
         (void)loadStateFlashUntil;
         (void)loadStateResult;
         DrawSettingsValueRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "叠加",
+        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "叠加层",
                            SS_SETTINGS_OVERLAY, u, ts);
 #endif
         return;
@@ -2317,8 +2325,8 @@ static void PaintRandomizerConfirmation(const SSurf* s, TargetList* tl, float u,
 
     static const char* const lines[] = {
         "随机化需要新游戏。",
-        "当前配置存档、",
-        "自动存档、状态存档以及",
+        "当前文件存档",
+        "自动存档、即时存档以及",
         "随机化数据将被",
         "删除，ROM文件不会删除。",
         "游戏将重启。",
@@ -2448,8 +2456,8 @@ static void DrawItemRing(const SSurf* s, const SecondScreenSnapshot* snap, Targe
  * (include/player.h). Only the lettering stand-in: once the theme can
  * stamp the real label frames this table stops being reached. */
 static const char* const kRActionWords[] = {
-    NULL,  "取消", "丢下", "投掷",  "阅读", "检查", "打开",
-    "交谈", "抓取", "举起", "变大", "缩小", "翻滚",
+    NULL,  "取消", "放下", "投掷",  "阅读", "检查", "打开",
+    "谈话", "抓取", "举起", "长大", "缩小", "滚动",
 };
 
 /* The game's contextual R prompt, on the panel because the player may be
@@ -2764,7 +2772,7 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     float x0 = 8 * u, xr = sx0 - 8 * u, gap = 8 * u;
     float bw = (xr - x0 - 2 * gap) / 3.0f;
 
-    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "任务", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
+    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "收集", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
     DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "地图", activeTab == SS_TAB_MAP,
                   SS_TAB_MAP, u, ts);
     DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "物品",

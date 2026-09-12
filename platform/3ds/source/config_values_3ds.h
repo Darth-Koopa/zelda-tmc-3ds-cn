@@ -47,7 +47,7 @@ static inline const char* ConfigValues3DS_DisplayLabel(Port3DSDisplayStyle style
     static const char* const names[PORT_3DS_DISPLAY_COUNT] = {
         [PORT_3DS_DISPLAY_BLUR] = "模糊",
         [PORT_3DS_DISPLAY_BILINEAR] = "双线性",
-        [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "像素完美",
+        [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "完美像素",
     };
     return style >= 0 && style < PORT_3DS_DISPLAY_COUNT ? names[style]
                                                         : names[CONFIG_3DS_DEFAULT_DISPLAY];
