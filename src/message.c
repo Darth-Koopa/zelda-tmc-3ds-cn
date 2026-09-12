@@ -268,6 +268,19 @@ Window gNewWindow;
 extern Window gCurrentWindow;
 extern Window gNewWindow;
 #endif
+#ifdef PC_PORT
+/* Follow the window actually drawn, because a text-position token can move
+ * gCurrentWindow while gMessage keeps its original request coordinates. */
+int Port_Message_WindowRect(int* x0, int* y0, int* x1, int* y1) {
+    if (!gCurrentWindow.active)
+        return 0;
+    *x0 = (int)gCurrentWindow.xPos * 8;
+    *y0 = (int)gCurrentWindow.yPos * 8;
+    *x1 = ((int)gCurrentWindow.xPos + (int)gCurrentWindow.width + 2) * 8;
+    *y1 = ((int)gCurrentWindow.yPos + (int)gCurrentWindow.height + 2) * 8;
+    return 1;
+}
+#endif
 
 typedef struct {
     u8 unk_00;
