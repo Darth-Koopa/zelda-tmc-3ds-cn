@@ -1903,17 +1903,17 @@ void Port_Widescreen_UpdateShadows(void) {
                 virtuappu_mode1_ws_msg_y1 = y1;
                 virtuappu_mode1_ws_msg_shift = (Port_Widescreen_EffectiveViewWidth() - 240) / 2;
             }
+        } else if (enterRoomBannerActive) {
+            /* The location-name banner bypasses gMessage and owns BG0 rows 5-6
+             * across the full native canvas. Move that whole band together;
+             * this also suspends the HUD right-anchor remap on those rows, which
+             * otherwise cuts a viewWidth-240 gap through the banner text. */
+            virtuappu_mode1_ws_msg_x0 = PORT_WS_ENTER_ROOM_BANNER_X0;
+            virtuappu_mode1_ws_msg_x1 = PORT_WS_ENTER_ROOM_BANNER_X1;
+            virtuappu_mode1_ws_msg_y0 = PORT_WS_ENTER_ROOM_BANNER_Y0;
+            virtuappu_mode1_ws_msg_y1 = PORT_WS_ENTER_ROOM_BANNER_Y1;
+            virtuappu_mode1_ws_msg_shift = (Port_Widescreen_EffectiveViewWidth() - 240) / 2;
         }
-    } else if (enterRoomBannerActive) {
-        /* The location-name banner bypasses gMessage and owns BG0 rows 5-6
-         * across the full native canvas.  Move that whole band together;
-         * this also suspends the HUD right-anchor remap on those rows, which
-         * otherwise cuts a viewWidth-240 gap through the banner text. */
-        virtuappu_mode1_ws_msg_x0 = PORT_WS_ENTER_ROOM_BANNER_X0;
-        virtuappu_mode1_ws_msg_x1 = PORT_WS_ENTER_ROOM_BANNER_X1;
-        virtuappu_mode1_ws_msg_y0 = PORT_WS_ENTER_ROOM_BANNER_Y0;
-        virtuappu_mode1_ws_msg_y1 = PORT_WS_ENTER_ROOM_BANNER_Y1;
-        virtuappu_mode1_ws_msg_shift = (Port_Widescreen_EffectiveViewWidth() - 240) / 2;
     }
     virtuappu_mode1_ws_hud_right_anchor = Port_Widescreen_HudRightAnchor();
 }
