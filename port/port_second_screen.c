@@ -757,17 +757,24 @@ static void DrawButtonPlateFallback(const SSurf* s, float x0, float y0, float x1
  * only for the fallback — the authentic call letters its own button. */
 static void DrawMenuButton(const SSurf* s, float x0, float y0, float x1, float y1, const char* label,
                            int pressed, int accent, float u, int32_t ts) {
+    /* BACK is also drawn by the 3DS idle/title/file-select wrapper before
+     * the save-selection screen. Translate it here so that path does not
+     * bypass the shared bottom-screen localization. */
+    const char* displayLabel = label;
+    if (label != NULL && (strcmp(label, "BACK") == 0 || strcmp(label, "Back") == 0 || strcmp(label, "back") == 0)) {
+        displayLabel = "返回";
+    }
     int32_t bts = (int32_t)((y1 - y0) / 26.0f);
     if (bts < 1) bts = 1;
     if (bts > ts) bts = ts;
 
     if (!Port_SecondScreenTheme_DrawMenuButton(s->px, s->w, s->h, s->stride, (int32_t)x0, (int32_t)y0,
-                                               (int32_t)(x1 - x0), (int32_t)(y1 - y0), label, pressed)) {
+                                               (int32_t)(x1 - x0), (int32_t)(y1 - y0), displayLabel, pressed)) {
         DrawButtonPlateFallback(s, x0, y0, x1, y1, pressed, bts);
-        if (label != NULL && label[0] != '\0') {
+        if (displayLabel != NULL && displayLabel[0] != '\0') {
             int32_t ms = (int32_t)(1.8f * u);
             if (ms < 1) ms = 1;
-            MenuTextCentered(s, label, (x0 + x1) / 2.0f, (y0 + y1) / 2.0f, ms, SS_TEXT_NAVY);
+            MenuTextCentered(s, displayLabel, (x0 + x1) / 2.0f, (y0 + y1) / 2.0f, ms, SS_TEXT_NAVY);
         }
     }
     if (accent) {
