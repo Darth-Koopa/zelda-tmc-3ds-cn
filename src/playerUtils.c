@@ -3897,6 +3897,9 @@ void CreateCollisionDataBorderAroundRoom(void) {
 bool32 sub_0807BD14(Entity* this, u32 scrollDirection) {
     u32 room = sub_0807BEEC(this->x.HALF.HI, this->y.HALF.HI, scrollDirection);
     if (room != 0xff) {
+#ifdef PC_PORT
+        Port_Widescreen_BeginScroll(room, scrollDirection);
+#endif
         gRoomControls.scrollAction = 2;
         gRoomControls.scrollSubAction = 0;
         gRoomControls.reload_flags = 1;

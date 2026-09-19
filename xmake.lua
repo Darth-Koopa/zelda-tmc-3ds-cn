@@ -855,6 +855,7 @@ target("tmc_pc")
     add_files("port/port_bugreport.cpp")     -- F9 bug-report capture (screenshot + save + state dump)
     add_files("port/port_bugreport_state.c") -- Crash-handler state snapshot
     add_files("port/port_linked_stubs.c")
+    add_files("port/port_3ds_full_view_policy.c")
     add_files("port/port_figurines.c")  -- gFigurines[] resolved from ROM (#57)
     add_files("port/port_draw.c")
     add_files("port/port_gba_mem.c")
@@ -2572,4 +2573,23 @@ target("bomb_compat_test")
         add_ldflags("-Wl,--gc-sections")
     end
     add_files("port/port_bomb_compat.c", "port/port_bomb_compat_test.c", "src/itemUtils.c", "src/itemMetaData.c")
+target_end()
+
+-- Production tile streaming and reveal continuity across adjacent rooms.
+target("widescreen_stream_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "include", "port", "port/ppu/include")
+    add_defines("PC_PORT", "USA", "ENGLISH", "MODE1_GBA_WIDTH=400", "MODE1_GBA_HEIGHT=240")
+    add_packages("libsdl3")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_widescreen_stream_test.c", "port/port_linked_stubs.c")
+    add_files("port/port_3ds_full_view_policy.c", "port/ppu/src/mode1.c")
+    add_syslinks("m")
 target_end()

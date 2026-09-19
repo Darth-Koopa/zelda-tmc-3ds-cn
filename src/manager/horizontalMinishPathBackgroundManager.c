@@ -10,6 +10,10 @@
 #include "game.h"
 #include "vram.h"
 #include "room.h"
+#ifdef PC_PORT
+#include "port_horizontal_minish_path.h"
+#include "port_widescreen.h"
+#endif
 
 void sub_08057F20(HorizontalMinishPathBackgroundManager*);
 void HorizontalMinishPathBackgroundManager_OnEnterRoom(HorizontalMinishPathBackgroundManager*);
@@ -40,8 +44,13 @@ void HorizontalMinishPathBackgroundManager_OnEnterRoom(HorizontalMinishPathBackg
 
 void sub_08057F20(HorizontalMinishPathBackgroundManager* this) {
     u32 tmp;
+#ifdef PC_PORT
+    tmp = Port_HorizontalMinishPathScroll(gRoomControls.scroll_x - gRoomControls.origin_x, gRoomControls.width, 3,
+                                          Port_Widescreen_GameplayViewWidth());
+#else
     tmp = gRoomControls.scroll_x - gRoomControls.origin_x;
     tmp = tmp + (tmp >> 3) + (0x400 - gRoomControls.width) / 2;
+#endif
     gScreen.bg3.xOffset = tmp & 0xF;
     gScreen.bg3.yOffset = 0x30 - ((0x30 - (gRoomControls.scroll_y - gRoomControls.origin_y)) >> 2);
     gScreen.bg3.subTileMap = gBG3Buffer;
@@ -51,8 +60,13 @@ void sub_08057F20(HorizontalMinishPathBackgroundManager* this) {
         this->unk_38 = tmp;
         gScreen.bg3.updated = 1;
     }
+#ifdef PC_PORT
+    tmp = Port_HorizontalMinishPathScroll(gRoomControls.scroll_x - gRoomControls.origin_x, gRoomControls.width, 2,
+                                          Port_Widescreen_GameplayViewWidth());
+#else
     tmp = gRoomControls.scroll_x - gRoomControls.origin_x;
     tmp = tmp + (tmp >> 2) + (0x400 - gRoomControls.width) / 2;
+#endif
     gScreen.bg1.xOffset = tmp & 0xF;
     gScreen.bg1.yOffset = 0x30 - ((0x30 - (gRoomControls.scroll_y - gRoomControls.origin_y)) >> 1);
     gScreen.bg1.subTileMap = gBG3Buffer + 0x400;
@@ -85,8 +99,7 @@ void sub_08058004(u32 unk1, void* src, void* dest) {
          * complete strides. The old 0x2000 bound rejected every nonzero
          * scroll on the second layer, leaving its last tilemap on screen. */
         const u32 readBytes = 31u * 0x100u + 0x40u;
-        if (srcOff > 0x4000u || startOff > 0x4000u - srcOff ||
-            readBytes > 0x4000u - srcOff - startOff)
+        if ((srcOff != 0 && srcOff != 0x2000u) || startOff > 0x2000u || readBytes > 0x2000u - startOff)
             return;
     }
 #endif
@@ -144,16 +157,26 @@ void sub_080580B0(u32 unk1) {
     LoadGfxGroup(unk1);
     gRoomVars.graphicsGroups[0] = unk1;
     sub_08058034();
+#ifdef PC_PORT
+    tmp = Port_HorizontalMinishPathScroll(gRoomControls.scroll_x - gRoomControls.origin_x, gRoomControls.width, 3,
+                                          Port_Widescreen_GameplayViewWidth());
+#else
     tmp = gRoomControls.scroll_x - gRoomControls.origin_x;
     tmp = tmp + (tmp >> 3) + (0x400 - gRoomControls.width) / 2;
+#endif
     sub_08058004(tmp, gUnk_02006F00, gBG3Buffer);
     gScreen.bg3.xOffset = tmp & 0xF;
     gScreen.bg3.yOffset = 0x30 - ((0x30 - (gRoomControls.scroll_y - gRoomControls.origin_y)) >> 1); //?
     gScreen.bg3.control = 0x1D09;
     gScreen.bg3.subTileMap = gBG3Buffer;
     gScreen.bg3.updated = 1;
+#ifdef PC_PORT
+    tmp = Port_HorizontalMinishPathScroll(gRoomControls.scroll_x - gRoomControls.origin_x, gRoomControls.width, 2,
+                                          Port_Widescreen_GameplayViewWidth());
+#else
     tmp = gRoomControls.scroll_x - gRoomControls.origin_x;
     tmp = tmp + (tmp >> 2) + (0x400 - gRoomControls.width) / 2;
+#endif
     sub_08058004(tmp, gUnk_02006F00 + 0x2000, gBG3Buffer + 0x400);
     gScreen.bg1.xOffset = tmp & 0xF;
     gScreen.bg1.yOffset = 0x30 - ((0x30 - (gRoomControls.scroll_y - gRoomControls.origin_y)) >> 1); //?

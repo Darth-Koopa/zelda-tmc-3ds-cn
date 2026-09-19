@@ -17,6 +17,8 @@
  *   TMC_ROOMCAP_SAVEFILE=<path>    import a raw 0x500-byte SaveFile fixture
  *   TMC_ROOMCAP_OPEN_CHEST=1       interact with a closed big chest
  *   TMC_ROOMCAP_WRITE_SAVEFILE=<path> export the final SaveFile
+ *   TMC_ROOMCAP_WALK=0..3         hold north/east/south/west after 80 ticks
+ *   TMC_ROOMCAP_SERIES=<directory> capture settled frames and camera state
  *   TMC_ROOMCAP_OUT=<path.png>      output PNG (default roomcap.png)
  */
 
@@ -749,6 +751,30 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
         (gMessage.state & MESSAGE_ACTIVE) && gTextRender.renderStatus != 5 && frame % 40 < 2) {
         extern void Port_Config_TestForceEdge(int input);
         Port_Config_TestForceEdge(0 /* PORT_INPUT_A */);
+    }
+
+    if (warp_done && (int)frame >= cap_frame - settle + 80) {
+        const char* walk = getenv("TMC_ROOMCAP_WALK");
+        if (walk && *walk) {
+            static const int inputs[4] = { 6, 4, 7, 5 };
+            const int direction = atoi(walk);
+            extern void Port_Config_TestForceEdge(int input);
+            if (direction >= 0 && direction < 4)
+                Port_Config_TestForceEdge(inputs[direction]);
+        }
+        const char* series = getenv("TMC_ROOMCAP_SERIES");
+        if (series && *series) {
+            char path[1024];
+            snprintf(path, sizeof(path), "%s/%05u.png", series, frame);
+            Port_CaptureBaseFramebufferPNG(path);
+            fprintf(stderr,
+                    "[roomcap-frame] %u area=%u room=%u scroll=%d,%d origin=%u,%u "
+                    "size=%u,%u action=%u/%u progress=%u player=%d,%d\n",
+                    frame, gRoomControls.area, gRoomControls.room, gRoomControls.scroll_x, gRoomControls.scroll_y,
+                    gRoomControls.origin_x, gRoomControls.origin_y, gRoomControls.width, gRoomControls.height,
+                    gRoomControls.scrollAction, gRoomControls.scrollSubAction, gRoomControls.unk_18,
+                    gPlayerEntity.base.x.HALF.HI, gPlayerEntity.base.y.HALF.HI);
+        }
     }
 
     if (warp_done && cap_frame && (int)frame >= cap_frame) {
