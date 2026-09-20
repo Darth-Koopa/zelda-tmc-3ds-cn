@@ -65,16 +65,18 @@ int main(void) {
     Port_SecondScreenState_Publish(); Port_SecondScreenState_Read(&next);
     CHECK(next.hasWorldMap);
     gMain.substate=GAMEMAIN_SUBTASK;
-    gUI.lastState=SUBTASK_AUXCUTSCENE; gUI.field_0x3=3;
+    /* LinksHouseBedroom calls sub_080A71C4(5, 1, ...): dump 004
+     * is its Hyrule Field auxiliary room, not sanctuary selector 3. */
+    gUI.lastState=SUBTASK_AUXCUTSCENE; gUI.field_0x3=1;
     for (unsigned phase=0;phase<=4;++phase) {
         gUI.nextToLoad=phase;
         Port_SecondScreenState_Publish(); Port_SecondScreenState_Read(&next);
         CHECK(next.introCinema);
     }
-    gUI.field_0x3=4; /* Ezlo's separate story is not the opening legend. */
+    gUI.field_0x3=3; /* The sanctuary tale reuses art but is not the opening. */
     Port_SecondScreenState_Publish(); Port_SecondScreenState_Read(&next);
     CHECK(!next.introCinema);
-    gUI.state=SUBTASK_AUXCUTSCENE; gUI.field_0x5=3;
+    gUI.state=SUBTASK_AUXCUTSCENE; gUI.field_0x5=1;
     Port_SecondScreenState_Publish(); Port_SecondScreenState_Read(&next);
     CHECK(next.introCinema);
     gMain.substate=GAMEMAIN_UPDATE; /* Ignore stale cutscene selectors. */
