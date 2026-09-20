@@ -88,6 +88,12 @@ void Port_SecondScreenState_Publish(void) {
 
     next.inGame = gMain.task == TASK_GAME;
     if (next.inGame) {
+        /* Auxiliary cutscene 3 selects the opening Picori legend. Include
+         * queued entry and restoration fades, but not other story scenes. */
+        next.introCinema = gMain.substate == GAMEMAIN_SUBTASK &&
+            ((gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 3) ||
+             (gUI.state == SUBTASK_AUXCUTSCENE && gUI.field_0x5 == 3));
+        next.hasWorldMap = GetInventoryValue(ITEM_MAP) != 0;
         /* Tap-to-equip goes through the engine's own path (swap handling,
          * HUD refresh) and only for items actually in the inventory — a
          * stale tap from a previous save can't equip something Link
