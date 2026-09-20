@@ -1084,29 +1084,13 @@ static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBot
 static float WholeMapScale(float width, float height) {
     float sx = width / (WMAP_CROP_X1 - WMAP_CROP_X0);
     float sy = height / (WMAP_CROP_Y1 - WMAP_CROP_Y0);
-    return fminf(sx, sy) * 0.97f;
+    return fminf(sx, sy) * 0.97f * 0.98f;
 }
 
-static void DrawMapZoomChip(const SSurf* s, TargetList* tl, float rx0, float ry0,
-                            float rx1, float ry1, int whole) {
-    /* Fixed UI position inside the upper-left stone corner, even while the
-     * map glides. Use this game's message-chip art and banner colors. */
-    float fit = WholeMapScale(rx1-rx0, ry1-ry0);
-    float left = (rx0+rx1-(WMAP_CROP_X1-WMAP_CROP_X0)*fit)*0.5f;
-    float top = (ry0+ry1-(WMAP_CROP_Y1-WMAP_CROP_Y0)*fit)*0.5f;
-    int size = 24;
-    int x = (int)(left + 30*fit), y = (int)(top + 8*fit);
-    Port_SecondScreenTheme_DrawChip(s->px, s->w, s->h, s->stride,
-                                    x, y, size, size, 1, SS_CHIP_DARK);
-    /* The banner font has no portable '+' glyph across ROMs. Draw a crisp
-     * symbol in its own white/navy palette instead of indexing kana art. */
-    uint32_t shade = Port_SecondScreenTheme_Color(SSC_BANNER_NAVY);
-    uint32_t ink = Port_SecondScreenTheme_Color(SSC_MENU_WHITE);
-    FillRect(s, x+6, y+10, x+19, y+15, shade);
-    if (whole) FillRect(s, x+10, y+6, x+15, y+19, shade);
-    FillRect(s, x+7, y+11, x+17, y+13, ink);
-    if (whole) FillRect(s, x+11, y+7, x+13, y+17, ink);
-    AddTarget(tl, x, y, x+size, y+size, SS_ACT_MAPZOOM, 0);
+static float WholeMapCenterX(float width, float scale) {
+    /* Shift the artwork left by 1% of the panel width. Keep the panel,
+     * clipping bounds and controls fixed while the camera glides. */
+    return (WMAP_CROP_X0 + WMAP_CROP_X1) * 0.5f + width * 0.01f / scale;
 }
 #endif
 
@@ -1150,7 +1134,11 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     float tScale = wantWhole ? wholeScale : followScale;
     float tx, ty;
     if (wantWhole) {
+#ifdef TMC_3DS
+        tx = WholeMapCenterX(rw, wholeScale);
+#else
         tx = WMAP_CROP_X0 + cw / 2.0f;
+#endif
         ty = WMAP_CROP_Y0 + chh / 2.0f;
     } else {
         float halfW = rw / (2.0f * tScale), halfH = rh / (2.0f * tScale);
@@ -1321,9 +1309,9 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     sUi.regionGridReady = (uint8_t)(gridReady != 0);
     UI_UNLOCK();
 
-    /* Changing the zoom is the chip's job and only the chip's: it steps
-     * between Link's close view and the whole of Hyrule, labelled
-     * by action (+/- on 3DS, ZOOM on other platforms). Only the
+    /* Changing the zoom is the chip's job and only the chip's: ZOOM steps
+     * between Link's close view and the whole of Hyrule, and stays labelled
+     * ZOOM in both because both are somewhere you can zoom from. Only the
      * regional map is a level down, and only it says BACK.
      *
      * Tapping the map itself only ever opens the rectangle under the
@@ -1333,13 +1321,9 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     if (followCfg && sLastFix.valid) {
         /* With no fix, or the follow cam switched off, the whole map is the
          * only view there is and the chip would have nothing to step to. */
-#ifdef TMC_3DS
-        DrawMapZoomChip(s, tl, rx0, ry0, rx1, ry1, wantWhole);
-#else
         float chip[4];
         DrawMapChip(s, "ZOOM", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
-#endif
     }
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 }
@@ -2922,7 +2906,7 @@ static void PaintUnavailableWorldMap(const SSurf* s, int x0, int y0, int x1, int
     const uint32_t* frame = Port_SecondScreenWorldMap_GetFrameImage(&w, &h);
     if (frame) {
         float scale = WholeMapScale(x1-x0, y1-y0);
-        float ox = (x0+x1)*0.5f - (WMAP_CROP_X0+WMAP_CROP_X1)*0.5f*scale;
+        float ox = (x0+x1)*0.5f - WholeMapCenterX(x1-x0, scale)*scale;
         float oy = (y0+y1)*0.5f - (WMAP_CROP_Y0+WMAP_CROP_Y1)*0.5f*scale;
         BlitMapRegion(s, frame, w, h, ox, oy, scale, x0, y0, x1, y1);
     }

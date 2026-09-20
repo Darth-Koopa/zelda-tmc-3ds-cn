@@ -15,12 +15,6 @@ static int artAvailable = 1;
 const uint32_t* Port_SecondScreenWorldMap_GetFrameImage(int32_t* w, int32_t* h) {
     *w = 240; *h = 160; return artAvailable ? frameArt : NULL;
 }
-uint32_t Port_SecondScreenTheme_Color(int id) { return id == SSC_MENU_WHITE ? 0xffffffff : 0xff660000; }
-void Port_SecondScreenTheme_DrawChip(uint32_t* p, int32_t w, int32_t h, int32_t stride,
-                                    int32_t x, int32_t y, int32_t cw, int32_t ch, int32_t scale, int style) {
-    SSurf s = {p,w,h,stride}; FillRect(&s,x,y,x+cw,y+ch,0xff112233);
-}
-
 static void Glide(float x, float y, float scale) {
     float start = sCam.scale;
     unsigned paints = 0;
@@ -59,9 +53,12 @@ int main(void) {
     sUi.regionState = SS_REGION_VIEW;
     PaintUnavailableWorldMap(&surface, 3, 3, 245, 206);
     assert(!sCam.valid && !sLastFix.valid && !sUi.mapLive && sUi.regionState == SS_REGION_OFF);
-    /* Only decoded frame pixels may replace the existing backdrop. The 3%
-     * inset must preserve a margin on both sides, including the right edge. */
-    assert(fabsf(WholeMapScale(242,203) - (242.0f/207)*.97f) < .00001f);
+    /* Only decoded frame pixels may replace the backdrop. The smaller,
+     * left-shifted artwork still leaves both panel edges unclipped. */
+    float scale = WholeMapScale(242,203);
+    assert(fabsf(scale - (242.0f/207)*.97f*.98f) < .00001f);
+    float shift = (WholeMapCenterX(242,scale) - (WMAP_CROP_X0+WMAP_CROP_X1)*.5f)*scale;
+    assert(fabsf(shift - 2.42f) < .00001f);
     for (int y = 0; y < 240; ++y)
         for (int x = 0; x < 320; ++x)
             assert(pixels[y*322+x] == 0 || pixels[y*322+x] == RGB(0,0,0));
@@ -73,16 +70,6 @@ int main(void) {
     PaintUnavailableWorldMap(&surface, 3,3,245,206);
     assert(pixels[100*322+100] == 0xffabcdef); /* Preserve backdrop while ROM data loads. */
     artAvailable = 1;
-    TargetList plus = {0}, minus = {0};
-    DrawMapZoomChip(&surface, &plus, 3,3,245,206,1);
-    assert(plus.n == 1 && plus.t[0].action == SS_ACT_MAPZOOM);
-    int px = (int)plus.t[0].x0, py = (int)plus.t[0].y0;
-    assert(px > 30 && px < 60 && py > 20 && py < 50);
-    assert(pixels[(py+8)*322+px+12] == 0xffffffff);
-    DrawMapZoomChip(&surface, &minus, 3,3,245,206,0);
-    assert(pixels[(py+8)*322+px+12] == 0xff112233);
-    assert(pixels[(py+12)*322+px+8] == 0xffffffff);
-    assert(memcmp(&plus,&minus,sizeof(plus)) == 0);
     ResetIdleOnlyState();
     AdvanceMapCamera(120, 100, .6f);
     assert(!sMapCameraMoving);
