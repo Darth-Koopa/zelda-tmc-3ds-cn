@@ -80,6 +80,36 @@ bool32 Port_RepairSmithBottleFlags(SaveFile* save, bool32 randomizerActive) {
     return TRUE;
 }
 
+bool32 Port_GoronBottleNeedsRepair(const SaveFile* save, bool32 randomizerActive) {
+    if (save == NULL || randomizerActive || !REGION_IS_EU || save->invalid || !save->initialized) {
+        return FALSE;
+    }
+    /* EU's dog-food delivery uses quest-item value 2, not USA's BIN_DOGFOOD.
+     * The chest ordinal 0x76 is ROM-native in both verified Goron room lists. */
+    if (!Port_SaveBitIsSet(save->flags, FLAG_BANK_4 + 0x76) ||
+        !Port_SaveBitIsSet(save->kinstones.fusedKinstones, KINSTONE_2F) ||
+        !Port_SaveBitIsSet(save->kinstones.fusedKinstones, KINSTONE_16) ||
+        !Port_SaveBitIsSet(save->flags, FLAG_BANK_1 + PORT_EU_SMITH_BOTTLE_FLAG) ||
+        !Port_SaveBitIsSet(save->flags, FLAG_BANK_0 + AKINDO_BOTTLE_SELL) ||
+        Port_SaveInventoryValue(save, ITEM_QST_DOGFOOD) != 2) {
+        return FALSE;
+    }
+    for (u32 i = 0; i < 3; ++i) {
+        if (Port_SaveInventoryValue(save, ITEM_BOTTLE1 + i) != 1) {
+            return FALSE;
+        }
+    }
+    return Port_SaveInventoryValue(save, ITEM_BOTTLE4) == 0 && save->stats.bottles[3] == 0;
+}
+
+bool32 Port_RepairGoronBottle(SaveFile* save, bool32 randomizerActive) {
+    if (!Port_GoronBottleNeedsRepair(save, randomizerActive)) {
+        return FALSE;
+    }
+    Port_SaveClearBit(save->flags, FLAG_BANK_4 + 0x76);
+    return TRUE;
+}
+
 #if !defined(JP) && !defined(EU) && !defined(DEMO_JP)
 static_assert(KAKERA_TAKARA_A == 0xB4u, "USA Smith bottle flag changed");
 #endif

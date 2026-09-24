@@ -31,6 +31,13 @@ static bool32 CreateItemEntityInternal(u32 type, u32 type2, u32 delay, u16 compl
     if (e == NULL) {
         return FALSE;
     }
+#ifdef PC_PORT
+    /* The generic randomizer hook has now resolved the final reward. */
+    if (!Port_BottleRewardCanBeCollected(&gSave, e->type)) {
+        DeleteEntity(e);
+        return FALSE;
+    }
+#endif
 
     e->parent = CreateLinkAnimation(e, e->type, 0);
     if (e->parent == NULL) {

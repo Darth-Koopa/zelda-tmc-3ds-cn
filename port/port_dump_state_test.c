@@ -113,6 +113,36 @@ int main(void) {
     CHECK(Port_DumpState_ReadLatest(dumps, TMC_REGION_EU, &loaded) == PORT_DUMP_STATE_OK_LEGACY,
           "legacy dump metadata accepts its matching ROM region");
 
+    char numbered[512], expected[512];
+    for (unsigned i = 0; i < 3; ++i) {
+        CHECK(Port_DumpState_CreateDirectoryAt(dumps, "20260911-032524", numbered, sizeof(numbered)), "numbered capture created");
+        snprintf(expected, sizeof(expected), "%s/%03u-dump-20260911-032524", dumps, i);
+        CHECK(!strcmp(numbered, expected), "sequence is independent of timestamp collisions");
+        CHECK(Port_DumpState_ReadLatest(dumps,TMC_REGION_EU,&loaded)==PORT_DUMP_STATE_NO_STATE,
+              "incomplete newest dump is not silently skipped");
+        snprintf(path,sizeof(path),"%s/%s",numbered,PORT_DUMP_LOAD_STATE_FILENAME);
+        CHECK(Port_DumpState_WriteFile(path,TMC_REGION_EU,&latestSave),"numbered state written");
+        CHECK(Port_DumpState_ReadLatest(dumps,TMC_REGION_EU,&loaded)==PORT_DUMP_STATE_OK,
+              "numbered checkpoint supersedes legacy sessions");
+    }
+    snprintf(expected,sizeof(expected),"%s/999-dump-20260911-032525",dumps);
+    CHECK(MakeDirectory(expected),"999 fixture");
+    CHECK(Port_DumpState_CreateDirectoryAt(dumps,"20200101-000000",numbered,sizeof(numbered)),"1000 created after clock rollback");
+    snprintf(expected,sizeof(expected),"%s/1000-dump-20200101-000000",dumps);
+    CHECK(!strcmp(expected,numbered),"numeric sequence crosses 999");
+    CHECK(Port_DumpState_ReadLatest(dumps,TMC_REGION_EU,&loaded)==PORT_DUMP_STATE_NO_STATE,"numeric 1000 is newest");
+    CHECK(!Port_DumpState_CreateDirectoryAt(dumps,"../bad",numbered,sizeof(numbered)),"invalid timestamp rejected");
+    CHECK(!numbered[0],"failed creation clears output");
+    // Remove only the explicitly created test sessions.
+    for (unsigned i=0;i<3;++i) {
+        snprintf(numbered,sizeof(numbered),"%s/%03u-dump-20260911-032524",dumps,i);
+        snprintf(path,sizeof(path),"%s/%s",numbered,PORT_DUMP_LOAD_STATE_FILENAME); remove(path); rmdir(numbered);
+    }
+    rmdir(expected);
+    snprintf(expected,sizeof(expected),"%s/999-dump-20260911-032525",dumps); rmdir(expected);
+    snprintf(expected,sizeof(expected),"%s/dump-sequence.txt",dumps); remove(expected);
+    snprintf(path, sizeof(path), "%s/info.txt", latest);
+
     remove(path);
     snprintf(path, sizeof(path), "%s/%s", latest, PORT_DUMP_LEGACY_STATE_FILENAME);
     remove(path);

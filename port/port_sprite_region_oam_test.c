@@ -72,7 +72,12 @@ static const EnemyDefinition kVaatiTransfiguredForms[] = {
     { .spriteIndex = SPRITE_VAATITRANSFIGURED_4 },
     { .spriteIndex = SPRITE_VAATITRANSFIGURED_5 },
 };
+static const EnemyDefinition kVaatiTransfiguredEyeForms[] = {
+    { .spriteIndex = SPRITE_ENEMY5A },
+    { .spriteIndex = SPRITE_ENEMY5A },
+};
 EnemyDefinition gEnemyDefinitions[0x70] = {
+    [VAATI_TRANSFIGURED_EYE] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredEyeForms },
     [LEEVER] = { .spriteIndex = SPRITE_LEEVER },
     [SPEAR_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kSpearMoblinForms },
     [BOW_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kBowMoblinForms },
@@ -83,6 +88,7 @@ EnemyDefinition gEnemyDefinitions[0x70] = {
     [GYORG_FEMALE_MOUTH] = { .spriteIndex = SPRITE_GYORGFEMALEMOUTH },
 };
 EnemyDefinition gEnemyDefinitions_eu[0x70] = {
+    [VAATI_TRANSFIGURED_EYE] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredEyeForms },
     [LEEVER] = { .spriteIndex = SPRITE_LEEVER },
     [SPEAR_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kSpearMoblinForms },
     [BOW_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kBowMoblinForms },
@@ -400,6 +406,10 @@ int main(void) {
                                                        0x00, 0xF8, 0x15, 0x00, 0x20,
                                                        0xF0, 0xF8, 0x11, 0x00, 0x20 };
     static const u8 kMappedEu320Frame0[] = { 0x01, 0xF9, 0x04, 0x40, 0x0D, 0x00 };
+    static const u8 kVaatiEyeFrame0[] = { 0x01, 0xFC, 0xFC, 0x00, 0x00, 0x00 };
+    static const u8 kWrongVaatiEffectFrame0[] = { 0x03, 0xF0, 0xF0, 0x40, 0x00, 0x00,
+                                                    0x00, 0x00, 0x40, 0x10, 0x00,
+                                                    0x10, 0x10, 0x40, 0x20, 0x00 };
     OAMCommand cmd;
 
     memset(gFrameObjLists, 0, sizeof(gFrameObjLists));
@@ -410,6 +420,39 @@ int main(void) {
     InstallFrame(312u, 0x1040u, 0x1140u, kWrongEu312GyorgChildFrame0, sizeof(kWrongEu312GyorgChildFrame0));
     Port_LoadOverlayDataFromConst(kOverlaySizeData, sizeof(kOverlaySizeData));
     CheckProductionSourceConversions();
+
+    /* The eye enemy is separate from VAATI_TRANSFIGURED type 4/5. Both
+     * eye types share a compiled-USA sprite ID. A missing conversion picks
+     * the adjacent effect's animation and large-piece geometry in EU. */
+    for (unsigned region = 0; region < 2; ++region) {
+        gRomRegion = region ? ROM_REGION_EU : ROM_REGION_USA;
+        gActiveRegion = region ? TMC_REGION_EU : TMC_REGION_USA;
+        const u16 nativeEye = region ? 296u : 297u;
+        InstallFrame(296u, 0x1200u, 0x1300u, kVaatiEyeFrame0, sizeof(kVaatiEyeFrame0));
+        InstallFrame(297u, 0x1210u, 0x1320u,
+                     region ? kWrongVaatiEffectFrame0 : kVaatiEyeFrame0,
+                     region ? sizeof(kWrongVaatiEffectFrame0) : sizeof(kVaatiEyeFrame0));
+        for (unsigned type = 0; type < 2; ++type) {
+            Enemy eye;
+            memset(&eye, 0, sizeof(eye));
+            eye.base.id = VAATI_TRANSFIGURED_EYE;
+            eye.base.type = type;
+            CHECK_EQ(EnemyInit(&eye), TRUE, "Vaati eye initializes");
+            CHECK_EQ(eye.base.spriteIndex, nativeEye, "Vaati eye selects regional eye sprite");
+            CHECK_EQ(EnemyInit(&eye), TRUE, "Vaati eye repeated init succeeds");
+            CHECK_EQ(eye.base.spriteIndex, nativeEye, "Vaati eye is not double-remapped");
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.x = 100;
+            cmd.y = 80;
+            cmd._8 = 0x6340;
+            ClearOam();
+            ram_DrawDirect(&cmd, eye.base.spriteIndex, 0);
+            CHECK_EQ(gOAMControls.updated, 1u, "Vaati eye emits eye geometry, not adjacent effect");
+            CHECK_EQ(OamHalfword(0, 0), 76u, "Vaati eye attr0");
+            CHECK_EQ(OamHalfword(0, 1), 96u, "Vaati eye attr1");
+            CHECK_EQ(OamHalfword(0, 2), 0x6340u, "Vaati eye tile and palette");
+        }
+    }
 
     memset(&cmd, 0, sizeof(cmd));
     cmd.x = 41;

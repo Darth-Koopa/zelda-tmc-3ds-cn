@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "updater.h"
 #include "old3ds_frame_pacer.h"
 #include "platform_gpu_3ds.h"
 #include "port_audio_3ds.h"
@@ -425,7 +426,7 @@ static uint64_t sAudioPumpMaxTicks;
 static bool PumpLifecycleAndAudio(void) {
     ++sAptChecks;
     const uint64_t aptStart = svcGetSystemTick();
-    const bool alive = sRunning && aptMainLoop();
+    const bool alive = sRunning && !Updater_ShouldClose() && aptMainLoop();
     const uint64_t aptTicks = svcGetSystemTick() - aptStart;
     sAptTicks += aptTicks;
     if (aptTicks > sAptMaxTicks) sAptMaxTicks = aptTicks;

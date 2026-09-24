@@ -28,6 +28,7 @@
 #include "fade.h"
 #ifdef PC_PORT
 #include "port_bottle_compat.h"
+#include "port_bomb_compat.h"
 #include "port_cloud_tops_fight.h"
 #include "port_vaati_progress.h"
 #include "port_ppu.h"
@@ -851,6 +852,32 @@ void SetActiveSave(u32 idx) {
                                 "persistence will retry on the next save.\n",
                                 idx);
                     }
+                }
+            }
+        }
+
+        if (Port_BombInventoryNeedsRepair(&gSave, Rando_IsActive())) {
+            if (!Port_Save_PreserveBeforeBombInventoryRepair()) {
+                fprintf(stderr, "[SAVE] Refused bomb inventory repair: permanent backup failed.\n");
+            } else if (Port_RepairBombInventory(&gSave, Rando_IsActive())) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
+                    fprintf(stderr, "[SAVE] Restored missing normal bombs in slot %u.\n", idx);
+                } else {
+                    fprintf(stderr, "[SAVE] Restored bombs in memory; persistence will retry on save.\n");
+                }
+            }
+        }
+
+        if (Port_GoronBottleNeedsRepair(&gSave, Rando_IsActive())) {
+            if (!Port_Save_PreserveBeforeGoronBottleRepair()) {
+                fprintf(stderr, "[SAVE] Refused Goron bottle repair: permanent backup failed.\n");
+            } else if (Port_RepairGoronBottle(&gSave, Rando_IsActive())) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
+                    fprintf(stderr, "[SAVE] Reopened the uncredited Goron bottle chest in slot %u.\n", idx);
+                } else {
+                    fprintf(stderr, "[SAVE] Reopened Goron chest in memory; persistence will retry on save.\n");
                 }
             }
         }

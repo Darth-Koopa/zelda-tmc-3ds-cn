@@ -330,6 +330,34 @@ int main(void) {
     CHECK(!FileExistsForTest("tmc_fuser_backup.sav.pre-fuser-repair.002.bak"),
           "replacement activation does not create a backup per fuser");
 
+    BuildDiskImage(image, activeSignature, 0xA9);
+    CHECK(WriteBytes("tmc_goron_bottle_backup.sav", image, sizeof(image)), "Goron repair fixture is written");
+    CHECK(Port_Save_SetActivePath("tmc_goron_bottle_backup.sav"), "Goron repair profile is selected");
+    EEPROMConfigure(0x40);
+    Port_Save_BeginTransaction();
+    CHECK(!Port_Save_PreserveBeforeGoronBottleRepair(), "Goron repair refuses mid-transaction backup");
+    CHECK(Port_Save_EndTransaction(), "Goron backup transaction ends");
+    CHECK(Port_Save_PreserveBeforeGoronBottleRepair(), "Goron repair preserves the complete profile");
+    CHECK(FilesEqualForTest("tmc_goron_bottle_backup.sav", "tmc_goron_bottle_backup.sav.pre-goron-bottle-repair.bak"),
+          "Goron backup is byte-exact");
+    CHECK(Port_Save_PreserveBeforeGoronBottleRepair(), "Goron backup is reused within one activation");
+    CHECK(!FileExistsForTest("tmc_goron_bottle_backup.sav.pre-goron-bottle-repair.001.bak"),
+          "repeated checks do not overwrite or duplicate the Goron backup");
+
+    BuildDiskImage(image, activeSignature, 0xA9);
+    CHECK(WriteBytes("tmc_bomb_inventory_backup.sav", image, sizeof(image)), "BombInventory repair fixture is written");
+    CHECK(Port_Save_SetActivePath("tmc_bomb_inventory_backup.sav"), "BombInventory repair profile is selected");
+    EEPROMConfigure(0x40);
+    Port_Save_BeginTransaction();
+    CHECK(!Port_Save_PreserveBeforeBombInventoryRepair(), "BombInventory repair refuses mid-transaction backup");
+    CHECK(Port_Save_EndTransaction(), "BombInventory backup transaction ends");
+    CHECK(Port_Save_PreserveBeforeBombInventoryRepair(), "BombInventory repair preserves the complete profile");
+    CHECK(FilesEqualForTest("tmc_bomb_inventory_backup.sav", "tmc_bomb_inventory_backup.sav.pre-bomb-inventory-repair.bak"),
+          "BombInventory backup is byte-exact");
+    CHECK(Port_Save_PreserveBeforeBombInventoryRepair(), "BombInventory backup is reused within one activation");
+    CHECK(!FileExistsForTest("tmc_bomb_inventory_backup.sav.pre-bomb-inventory-repair.001.bak"),
+          "repeated checks do not overwrite or duplicate the BombInventory backup");
+
     BuildDiskImage(image, activeSignature, 0xA8);
     CHECK(WriteBytes("tmc_smith_bottle_backup.sav", image, sizeof(image)),
           "Smith bottle flag repair backup fixture is written");

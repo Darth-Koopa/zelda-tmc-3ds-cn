@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define PORT_DUMP_STATE_VERSION 1u
 #define PORT_DUMP_STATE_MAX_PATH 512
@@ -145,10 +148,111 @@ static PortDumpStateResult ReadLegacyState(const char* dumpDirectory, int active
     return PORT_DUMP_STATE_OK_LEGACY;
 }
 
+static bool DumpNumber(const char *name, uint32_t *number) {
+  uint32_t value = 0;
+  unsigned digits = 0;
+  while (name[digits] >= '0' && name[digits] <= '9') {
+    uint32_t digit = (uint32_t)(name[digits++] - '0');
+    if (value > (UINT32_MAX - digit) / 10) return false;
+    value = value * 10 + digit;
+  }
+  if (digits < 3) return false;
+  // E8 timestamped names and the previous E7 numeric-only names.
+  if (name[digits] && strncmp(name + digits, "-dump-", 6)) return false;
+  *number = value;
+  return true;
+}
+
+static bool SaveDumpCounter(const char *path, uint32_t next) {
+  char temporary[PORT_DUMP_STATE_MAX_PATH];
+  int n = snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+  if (n < 0 || n >= (int)sizeof(temporary)) return false;
+  FILE *f = fopen(temporary, "wb");
+  if (!f) return false;
+  bool ok = fprintf(f, "%lu\n", (unsigned long)next) > 0;
+  if (fflush(f) || fsync(fileno(f))) ok = false;
+  if (fclose(f)) ok = false;
+#ifdef TMC_3DS
+  if (ok && remove(path) && errno != ENOENT) ok = false;
+#endif
+  if (ok && rename(temporary, path) == 0) return true;
+  remove(temporary);
+  return false;
+}
+
+bool Port_DumpState_CreateDirectoryAt(const char *root, const char *stamp,
+                                  char *out, size_t out_size) {
+  if (!out || !out_size) return false;
+  out[0] = 0;
+  if (!root || !stamp || strlen(stamp) != 15 || stamp[8] != '-') return false;
+  for (unsigned i = 0; i < 15; i++)
+    if (i != 8 && (stamp[i] < '0' || stamp[i] > '9')) return false;
+  if (mkdir(root, 0777) && errno != EEXIST) return false;
+  DIR *dir = opendir(root);
+  if (!dir) return false;
+  char counter[PORT_DUMP_STATE_MAX_PATH];
+  int n = snprintf(counter, sizeof(counter), "%s/dump-sequence.txt", root);
+  if (n < 0 || n >= (int)sizeof(counter)) { closedir(dir); return false; }
+  uint32_t next = 0;
+  FILE *f = fopen(counter, "rb");
+  if (f) {
+    char text[64], *end;
+    if (fgets(text, sizeof(text), f)) {
+      errno = 0;
+      unsigned long value = strtoul(text, &end, 10);
+      if (!errno && text[0] >= '0' && text[0] <= '9' && value <= UINT32_MAX && end != text &&
+          (*end == '\n' || *end == 0)) next = (uint32_t)value;
+    }
+    fclose(f);
+  }
+  bool has_dumps = false, exhausted = false;
+  struct dirent *entry;
+  while ((entry = readdir(dir)) != NULL) {
+    uint32_t number;
+    if (!strncmp(entry->d_name, "dump-", 5) &&
+        entry->d_name[5] >= '0' && entry->d_name[5] <= '9' )
+      has_dumps = true;
+    if (!DumpNumber(entry->d_name, &number)) continue;
+    has_dumps = true;
+    if (number == UINT32_MAX) { exhausted = true; break; }
+    if (number >= next) next = number + 1;
+  }
+  closedir(dir);
+  if (!has_dumps) next = 0;
+  if (exhausted) return false;
+  for (unsigned attempt = 0; attempt < 1000 && next != UINT32_MAX; attempt++, next++) {
+    int length = snprintf(out, out_size, "%s/%03lu-dump-%s", root, (unsigned long)next, stamp);
+    if (length < 0 || length >= (int)out_size) break;
+    if (mkdir(out, 0777) == 0) {
+      // A counter write failure does not lose the capture: scanning its
+      // existing directory recovers the next number on the next request.
+      SaveDumpCounter(counter, next + 1);
+      return true;
+    }
+    if (errno != EEXIST) break;
+  }
+  out[0] = 0;
+  return false;
+}
+
+bool Port_DumpState_CreateDirectory(const char *root, char *out, size_t out_size) {
+  time_t now = time(NULL);
+  struct tm *calendar = localtime(&now);
+  char stamp[32];
+  if (!calendar || !strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", calendar)) {
+    if (out && out_size) out[0] = 0;
+    return false;
+  }
+  return Port_DumpState_CreateDirectoryAt(root, stamp, out, out_size);
+}
+
+
 static PortDumpStateResult FindLatestDump(const char* dumpsDirectory, char* out, size_t outSize) {
     DIR* directory;
     struct dirent* entry;
     char latest[256] = "";
+    uint32_t latestNumber = 0;
+    bool latestNumbered = false;
 
     directory = opendir(dumpsDirectory);
     if (directory == NULL)
@@ -157,14 +261,21 @@ static PortDumpStateResult FindLatestDump(const char* dumpsDirectory, char* out,
         char path[PORT_DUMP_STATE_MAX_PATH];
         struct stat info;
 
-        if (strncmp(entry->d_name, "dump-", 5) != 0)
+        uint32_t number = 0;
+        bool numbered = DumpNumber(entry->d_name, &number);
+        if (!numbered && strncmp(entry->d_name, "dump-", 5) != 0)
             continue;
         if (snprintf(path, sizeof(path), "%s/%s", dumpsDirectory, entry->d_name) >= (int)sizeof(path))
             continue;
         if (stat(path, &info) != 0 || !S_ISDIR(info.st_mode))
             continue;
-        if (latest[0] == '\0' || strcmp(entry->d_name, latest) > 0)
+        if (!latest[0] || (numbered && !latestNumbered) ||
+            (numbered == latestNumbered && (number > latestNumber ||
+             (number == latestNumber && strcmp(entry->d_name, latest) > 0)))) {
             snprintf(latest, sizeof(latest), "%s", entry->d_name);
+            latestNumber = number;
+            latestNumbered = numbered;
+        }
     }
     closedir(directory);
 

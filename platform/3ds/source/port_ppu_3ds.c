@@ -23,6 +23,8 @@
 #include "cpu/mode1.h"
 #include "main.h"
 #include "map.h"
+#include "area.h"
+#include "screen.h"
 #include "menu.h"
 #include "player.h"
 #include "room.h"
@@ -117,6 +119,7 @@ static int sTopCropX;
 static int sTopCropY;
 static uint8_t sGpuIoPerLine[MODE1_GBA_HEIGHT][MODE1_IO_MEM_SIZE];
 static bool sGpuIoUniform = true;
+static bool sGpuSnapshotValid;
 static uint64_t sTopDrawTicks;
 static uint64_t sTopBlitTicks;
 static uint16_t sGpuDispcntPerLine[MODE1_GBA_HEIGHT];
@@ -235,6 +238,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgX1 = virtuappu_mode1_ws_msg_x1;
     view->wsMsgY0 = virtuappu_mode1_ws_msg_y0;
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
+    view->bg3Repeat = virtuappu_mode1_bg3_repeat;
     view->objClipEnable = virtuappu_mode1_obj_clip_enable;
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
@@ -297,16 +301,6 @@ static bool WritePalettes(const char* path) {
     return ok;
 }
 
-static void MakeTimestamp(char* stamp, size_t stampSize) {
-    time_t now = time(NULL);
-    struct tm* tmNow = now > 0 ? localtime(&now) : NULL;
-    if (tmNow) {
-        strftime(stamp, stampSize, "%Y%m%d-%H%M%S", tmNow);
-    } else {
-        snprintf(stamp, stampSize, "unknown-time");
-    }
-}
-
 static char sLastDumpDirectory[128];
 
 const char* Port_PPU_3DS_LastDumpDirectory(void) {
@@ -314,28 +308,9 @@ const char* Port_PPU_3DS_LastDumpDirectory(void) {
 }
 
 static bool CreateDumpDirectory(char* out, size_t outSize) {
-    if (!out || outSize == 0)
-        return false;
-    if (mkdir("dumps", 0777) != 0 && errno != EEXIST)
-        return false;
-
-    char stamp[32];
-    MakeTimestamp(stamp, sizeof(stamp));
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        if (attempt == 0) {
-            snprintf(out, outSize, "dumps/dump-%s", stamp);
-        } else {
-            snprintf(out, outSize, "dumps/dump-%s-%02d", stamp, attempt);
-        }
-        if (mkdir(out, 0777) == 0) {
-            snprintf(sLastDumpDirectory, sizeof(sLastDumpDirectory), "%s", out);
-            return true;
-        }
-        if (errno != EEXIST)
-            break;
-    }
-    out[0] = 0;
-    return false;
+    if (!Port_DumpState_CreateDirectory("dumps", out, outSize)) return false;
+    snprintf(sLastDumpDirectory, sizeof(sLastDumpDirectory), "%s", out);
+    return true;
 }
 
 static double TicksToMilliseconds(uint64_t ticks) {
@@ -388,28 +363,32 @@ void Port_PPU_3DS_WriteQuickDump(void) {
     WritePalettes(path);
     snprintf(path, sizeof(path), "%s/oam.bin", dir);
     WriteBlob(path, gOamMem, sizeof(gOamMem));
-    /* The per-line register snapshot the GPU builder consumes. Without it a
-     * host replay cannot reproduce an HDMA frame, which is exactly the case
-     * whose cost matters. On a frame without HDMA only row 0 is populated, so
-     * replicate it: the replay must see what the builder saw. */
-    if (sGpuIoUniform) {
-        for (unsigned line = 1; line < MODE1_GBA_HEIGHT; ++line) {
-            memcpy(sGpuIoPerLine[line], sGpuIoPerLine[0],
-                   sizeof(sGpuIoPerLine[0]));
-            sGpuDispcntPerLine[line] = sGpuDispcntPerLine[0];
+    /* CPU-only frames have no GPU register snapshot. Do not publish stale
+     * or zero-filled arrays as evidence of the displayed frame. */
+    if (sGpuSnapshotValid) {
+        /* The per-line register snapshot the GPU builder consumes. Without it a
+         * host replay cannot reproduce an HDMA frame, which is exactly the case
+         * whose cost matters. On a frame without HDMA only row 0 is populated, so
+         * replicate it: the replay must see what the builder saw. */
+        if (sGpuIoUniform) {
+            for (unsigned line = 1; line < MODE1_GBA_HEIGHT; ++line) {
+                memcpy(sGpuIoPerLine[line], sGpuIoPerLine[0],
+                       sizeof(sGpuIoPerLine[0]));
+                sGpuDispcntPerLine[line] = sGpuDispcntPerLine[0];
+            }
         }
-    }
-    snprintf(path, sizeof(path), "%s/io-per-line.bin", dir);
-    WriteBlob(path, sGpuIoPerLine, sizeof(sGpuIoPerLine));
-    snprintf(path, sizeof(path), "%s/dispcnt-per-line.bin", dir);
-    WriteBlob(path, sGpuDispcntPerLine, sizeof(sGpuDispcntPerLine));
-    snprintf(path, sizeof(path), "%s/affine-ref.bin", dir);
-    {
-        FILE* file = fopen(path, "wb");
-        if (file) {
-            fwrite(sGpuAffRefX, sizeof(sGpuAffRefX[0]), MODE1_GBA_HEIGHT, file);
-            fwrite(sGpuAffRefY, sizeof(sGpuAffRefY[0]), MODE1_GBA_HEIGHT, file);
-            fclose(file);
+        snprintf(path, sizeof(path), "%s/io-per-line.bin", dir);
+        WriteBlob(path, sGpuIoPerLine, sizeof(sGpuIoPerLine));
+        snprintf(path, sizeof(path), "%s/dispcnt-per-line.bin", dir);
+        WriteBlob(path, sGpuDispcntPerLine, sizeof(sGpuDispcntPerLine));
+        snprintf(path, sizeof(path), "%s/affine-ref.bin", dir);
+        {
+            FILE* file = fopen(path, "wb");
+            if (file) {
+                fwrite(sGpuAffRefX, sizeof(sGpuAffRefX[0]), MODE1_GBA_HEIGHT, file);
+                fwrite(sGpuAffRefY, sizeof(sGpuAffRefY[0]), MODE1_GBA_HEIGHT, file);
+                fclose(file);
+            }
         }
     }
     snprintf(path, sizeof(path), "%s/main-state.bin", dir);
@@ -675,6 +654,10 @@ void Port_PPU_3DS_WriteQuickDump(void) {
                 (unsigned long long)ppuGpuStats.parityFailures,
                 (unsigned long long)ppuGpuStats.differingPixels,
                 (unsigned long long)ppuGpuStats.structuralPixels);
+        fprintf(info, "PICA200 command budget fallbacks/last/max words: %llu/%lu/%lu\n",
+                (unsigned long long)ppuGpuStats.commandBudgetFallbacks,
+                (unsigned long)ppuGpuStats.lastCommandWords,
+                (unsigned long)ppuGpuStats.maxCommandWords);
         {
             /* Measured, not inferred: which phase of a paint actually costs
              * the 10-15 ms. */
@@ -854,13 +837,16 @@ void Port_PPU_3DS_WriteQuickDump(void) {
                 sTopCropX, sTopCropY);
         fprintf(info, "Full View fallback reason: %s\n",
                 Port3DSFullViewPolicy_FallbackReasonName(sTopFallbackReason));
+        fprintf(info, "BG3 seamless repeat: %s\n", virtuappu_mode1_bg3_repeat ? "enabled" : "disabled");
         fprintf(info, "BG3 native HDMA bounds: %s\n",
                 virtuappu_mode1_bg3_hdma_native_bounds ? "enabled" : "disabled");
 
         fprintf(info, "\n[Files]\n");
         fprintf(info, "top-screen.bmp, bottom-screen.bmp, top-screen.raw, bottom-screen.raw\n");
         fprintf(info, "ewram.bin, iwram.bin, vram.bin, io-registers.bin, palettes.bin, oam.bin, main-state.bin\n");
-        fprintf(info, "io-per-line.bin, dispcnt-per-line.bin, affine-ref.bin\n");
+        fprintf(info, "GPU per-line snapshot: %s\n",
+                sGpuSnapshotValid ? "available (io-per-line.bin, dispcnt-per-line.bin, affine-ref.bin)" :
+                                    "unavailable (CPU frame; files omitted)");
         fprintf(info, "room-controls.bin, map-bottom-layer.bin, map-top-layer.bin\n");
         fprintf(info, "map-bottom-special.bin, map-top-special.bin, bg0-buffer.bin, bg1-buffer.bin, "
                       "bg2-buffer.bin, bg3-buffer.bin, save-state.bin (active SaveFile, 0x500 bytes)\n");
@@ -1037,6 +1023,10 @@ void Port_PPU_PresentFrame(void) {
     virtuappu_mode1_pre_line_callback = port_hdma_has_active_channels() ? port_hdma_step_line : NULL;
     virtuappu_mode1_bg2x_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x28, gIoMem + 0x2c) != 0;
     virtuappu_mode1_bg2y_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x2c, gIoMem + 0x30) != 0;
+    /* Hyrule Field clouds are a seamless 256px repeating tilemap. Normal
+     * Wide mode must extend them past x=240 just as Full View already does. */
+    virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
+        gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
     virtuappu_mode1_bg3_hdma_native_bounds =
         port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0;
 
@@ -1044,6 +1034,7 @@ void Port_PPU_PresentFrame(void) {
     Platform3DS_SetStage(1);
     PpuGpu3DSFrameView frameView;
     bool gpuReady = false;
+    sGpuSnapshotValid = false;
     if (Port_Config_GpuRenderer() &&
         PpuGpu3DS_ShouldUse(Platform3DS_IsNew3DS(), sGpuPpuInitialized,
                             sGpuPpuDisabled)) {
@@ -1068,6 +1059,7 @@ void Port_PPU_PresentFrame(void) {
         virtuappu_mode1_prepare_frame(
             &virtuappu_registers, sGpuIoPerLine[0], sGpuDispcntPerLine,
             sGpuAffRefX, sGpuAffRefY, &frameView.frameDispcnt);
+        sGpuSnapshotValid = true;
         /* Claim the GPU frame first: preflight writes the vertex, index and
          * atlas buffers the previous frame may still be drawing from, so this
          * wait is a correctness barrier, not incidental ordering. It cannot be

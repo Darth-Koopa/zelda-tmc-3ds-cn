@@ -24,6 +24,8 @@ typedef struct PortPpuGpu3DSStats {
     /* The frame the quick dump captured, so a host replay is comparable. */
     uint64_t lastBuildTicks;
     uint32_t lastBands, lastVertices;
+    uint64_t commandBudgetFallbacks;
+    uint32_t lastCommandWords, maxCommandWords;
     uint8_t lastMapLayerMask;
     bool initialized, enabled, disabled;
 } PortPpuGpu3DSStats;

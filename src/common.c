@@ -1656,6 +1656,27 @@ KinstoneId GetFusionToOffer(Entity* entity) {
 #ifdef PC_PORT
     extern const u8 SharedFusions[];
     extern bool Port_Config_GetRandoEnabled(void);
+    /* Retail EU marks Eenie done even after cancelling his first fusion.
+     * Only this exact unfinished, vanilla state is recoverable without
+     * guessing another fuser's scripted sentinel. Preserve the raw profile. */
+    if (REGION_IS_EU && fuserId == 0x3fu && fuserProgress == 0 &&
+        offeredFusion == KINSTONE_FUSER_DONE && fuserData[5] == 0x29u &&
+        !CheckKinstoneFused(0x29u) && !Port_Config_GetRandoEnabled()) {
+        if (!Port_Save_PreserveBeforeFuserRepair()) return KINSTONE_NONE;
+        offeredFusion = KINSTONE_NONE;
+        gSave.kinstones.fuserOffers[fuserId] = KINSTONE_NONE;
+    }
+    /* Issue #22: legacy EU walls retain the first unfinished concrete offer
+     * (0x25) with the cursor one entry ahead. Keep that offer and every fusion
+     * bit; repair only this proven cursor mismatch, never a completed wall. */
+    if (REGION_IS_EU && !Port_Config_GetRandoEnabled() && fuserId >= 0x66u && fuserId <= 0x6Au &&
+        fuserProgress == 2 && offeredFusion == 0x25u && fuserData[5] == 0x29u &&
+        fuserData[6] == 0x25u && fuserData[7] == 0x2Au &&
+        CheckKinstoneFused(0x29u) && !CheckKinstoneFused(0x25u)) {
+        if (!Port_Save_PreserveBeforeFuserRepair()) return KINSTONE_NONE;
+        fuserProgress = 1;
+        gSave.kinstones.fuserProgress[fuserId] = 1;
+    }
     if (!Port_IsFuserSaveStateValid(fuserData, fuserProgress, offeredFusion)) {
         fprintf(stderr,
                 "[KINSTONE] Refusing structurally invalid saved fuser state (id=%u progress=%u "

@@ -110,8 +110,11 @@ bool32 EnemyInit(Enemy* this) {
          * known compiled-logical sources exactly once when materializing the
          * entity. The Gyorg family is especially important: without this
          * conversion the female eye selects the adjacent Gyorg-child frame
-         * topology and renders four unrelated OBJ pieces per eye. */
+         * topology and renders four unrelated OBJ pieces per eye. Vaati's
+         * separate eye enemy also needs conversion (USA 297 -> EU 296);
+         * EU 297 is the large effect used by the body's type-4 child. */
         if (super->id == SPEAR_MOBLIN || super->id == BOW_MOBLIN || super->id == VAATI_TRANSFIGURED ||
+            super->id == VAATI_TRANSFIGURED_EYE ||
             super->id == GYORG_CHILD ||
             super->id == GYORG_FEMALE_EYE || super->id == GYORG_MALE_EYE ||
             super->id == GYORG_FEMALE_MOUTH) {
@@ -272,7 +275,9 @@ void EnemyCreateDeathFX(Enemy* parent, u32 parentId, u32 fixedItem) {
                 CopyPosition(&(parent->base), &(deathFx2->base));
             }
             if (parent->enemyFlags & EM_FLAG_NO_DEATH_FX) {
-                deathFx2->unk6c |= 8;
+                if (deathFx2 != NULL) {
+                    deathFx2->unk6c |= 8;
+                }
                 DeleteEntity(&(parent->base));
                 return;
             }
@@ -287,7 +292,9 @@ void EnemyCreateDeathFX(Enemy* parent, u32 parentId, u32 fixedItem) {
                         deathFx2->unk6c |= 4;
                     }
                 }
-                deathFx2->base.parent = NULL;
+                if (deathFx2 != NULL) {
+                    deathFx2->base.parent = NULL;
+                }
                 DeleteThisEntity();
                 return;
             }

@@ -20,6 +20,9 @@
 
 #ifdef PC_PORT
 #include "port_softslots.h"
+#include "port_bomb_compat.h"
+#include "port_save.h"
+extern bool Rando_IsActive(void);
 #include "port_roll_attack_macro.h"
 #include <stdbool.h>
 /* port/rando/rando_runtime.c — credits a shuffled dungeon item (small key /
@@ -178,6 +181,14 @@ u32 GiveItem(u32 item, u32 param_2) {
             LoadItemGfx();
             break;
         case 8:
+#ifdef PC_PORT
+            /* Also recover when a legacy diagnostic state bypassed file select. */
+            if (uVar4 != 0 && Port_BombInventoryNeedsRepair(&gSave, Rando_IsActive()) &&
+                Port_Save_PreserveBeforeBombInventoryRepair() &&
+                Port_RepairBombInventory(&gSave, Rando_IsActive())) {
+                PutItemOnSlot(ITEM_BOMBS);
+            }
+#endif
             if (uVar4 == 0) {
                 SetInventoryValue(ITEM_BOMBS, 1);
                 PutItemOnSlot(7);

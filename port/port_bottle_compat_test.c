@@ -41,6 +41,56 @@ static void BuildAffectedSave(SaveFile* save) {
     save->stats.bottles[0] = ITEM_BOTTLE_EMPTY;
 }
 
+static void TestGoronRepair(void) {
+    SaveFile save = { 0 }, before, expected;
+    gActiveRegion = TMC_REGION_EU;
+    save.initialized = 1;
+    SetBit(save.flags, FLAG_BANK_4 + 0x76);
+    SetBit(save.flags, FLAG_BANK_1 + 0xB2);
+    SetBit(save.flags, AKINDO_BOTTLE_SELL);
+    SetBit(save.kinstones.fusedKinstones, KINSTONE_16);
+    SetBit(save.kinstones.fusedKinstones, KINSTONE_2F);
+    SetSavedInventoryValue(&save, ITEM_QST_DOGFOOD, 2);
+    for (u32 i = 0; i < 3; ++i) {
+        SetSavedInventoryValue(&save, ITEM_BOTTLE1 + i, 1);
+        save.stats.bottles[i] = i < 2 ? ITEM_BOTTLE_FAIRY : ITEM_BOTTLE_EMPTY;
+    }
+    before = expected = save;
+    expected.flags[(FLAG_BANK_4 + 0x76) >> 3] &= ~(1u << (0x76 & 7));
+    CHECK(Port_RepairGoronBottle(&save, FALSE), "four completed sources with only three bottles are recovered");
+    CHECK(memcmp(&save, &expected, sizeof(save)) == 0, "only the Goron completion bit changes");
+    CHECK(!Port_RepairGoronBottle(&save, FALSE), "Goron recovery is idempotent");
+    for (u32 i = 0; i < 9; ++i) {
+        save = before;
+        switch (i) {
+            case 0: save.flags[(FLAG_BANK_4 + 0x76) >> 3] &= ~(1u << (0x76 & 7)); break;
+            case 1: save.flags[(FLAG_BANK_1 + 0xB2) >> 3] &= ~(1u << (0xB2 & 7)); break;
+            case 2: save.flags[AKINDO_BOTTLE_SELL >> 3] &= ~(1u << (AKINDO_BOTTLE_SELL & 7)); break;
+            case 3: save.kinstones.fusedKinstones[KINSTONE_16 >> 3] &= ~(1u << (KINSTONE_16 & 7)); break;
+            case 4: save.kinstones.fusedKinstones[KINSTONE_2F >> 3] &= ~(1u << (KINSTONE_2F & 7)); break;
+            case 5: SetSavedInventoryValue(&save, ITEM_QST_DOGFOOD, 1); break;
+            case 6: SetSavedInventoryValue(&save, ITEM_BOTTLE4, 1); break;
+            case 7: save.stats.bottles[3] = ITEM_BOTTLE_EMPTY; break;
+            case 8: SetSavedInventoryValue(&save, ITEM_BOTTLE2, 0); break;
+        }
+        expected = save;
+        CHECK(!Port_RepairGoronBottle(&save, FALSE), "incomplete or ambiguous sources are untouched");
+        CHECK(memcmp(&save, &expected, sizeof(save)) == 0, "rejected recovery is byte-exact");
+    }
+    save = before;
+    CHECK(!Port_RepairGoronBottle(&save, TRUE), "randomizer is excluded");
+    save.invalid = 1;
+    CHECK(!Port_RepairGoronBottle(&save, FALSE), "invalid saves are excluded");
+    save = before; save.initialized = 0;
+    CHECK(!Port_RepairGoronBottle(&save, FALSE), "new saves are excluded");
+    save = before;
+    gActiveRegion = TMC_REGION_USA;
+    CHECK(!Port_RepairGoronBottle(&save, FALSE), "unreported USA state is not migrated");
+    gActiveRegion = TMC_REGION_JP;
+    CHECK(!Port_RepairGoronBottle(&save, FALSE), "unverified JP state is not migrated");
+    CHECK(!Port_GoronBottleNeedsRepair(NULL, FALSE), "NULL save is rejected");
+}
+
 int main(void) {
     SaveFile save;
     SaveFile before;
@@ -93,6 +143,7 @@ int main(void) {
     gActiveRegion = TMC_REGION_JP;
     CHECK(!Port_RepairSmithBottleFlags(&save, FALSE), "unverified JP saves are never migrated");
 
+    TestGoronRepair();
     if (sFailures != 0) {
         return 1;
     }

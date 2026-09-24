@@ -2,6 +2,7 @@
 #include "port_ppu_gpu_3ds.h"
 
 #include "platform_gpu_3ds.h"
+#include "ppu_gpu_3ds_budget.h"
 
 #include "ppu_gpu_3ds_shader_shbin.h"
 
@@ -318,6 +319,20 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
         sStats.maxVertices = (uint32_t)sCommands.vertexCount;
     if (sCommands.batchCount > sStats.maxBatches)
         sStats.maxBatches = (uint32_t)sCommands.batchCount;
+
+    /* Geometry capacity does not bound the hardware command list: every
+     * window band repeats state and draw commands, including OBJ prepasses.
+     * Reject before emitting any PPU commands or flushing its atlas. The
+     * caller then renders this same frame in software and retries next frame. */
+    const size_t commandWords = PpuGpu3DS_CommandWordsRequired(&sCommands);
+    sStats.lastCommandWords = (uint32_t)commandWords;
+    if (commandWords > sStats.maxCommandWords)
+        sStats.maxCommandWords = (uint32_t)commandWords;
+    if (!PpuGpu3DS_CommandBudgetFits(commandWords, gpuCmdBuf != NULL,
+                                    gpuCmdBufSize, gpuCmdBufOffset)) {
+        ++sStats.commandBudgetFallbacks;
+        return FinishPreflight(false, startTick);
+    }
 
     const uint64_t flushStartTick = svcGetSystemTick();
     /* Only the slots decoded this frame need uploading, but each

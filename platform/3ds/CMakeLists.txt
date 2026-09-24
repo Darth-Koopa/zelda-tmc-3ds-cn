@@ -83,6 +83,7 @@ set(TMC_PORT_SOURCES
     port/port_script_addrs.c port/port_offset_remap.c port/port_rom.c
     port/port_region_data.c
     port/port_bottle_compat.c
+    port/port_bomb_compat.c
     port/port_cloud_tops_fight.c
     port/port_vaati_progress.c
     port/port_rom_hash.c port/port_rom_profile.c port/port_text_codec.c
@@ -117,6 +118,8 @@ add_executable(tmc-3ds
     ${TMC_ACTOR_SOURCES}
     ${TMC_PORT_SOURCES}
     ${AGBPLAY_SOURCES}
+    source/updater.c
+    source/update_manifest.c
     source/main_3ds.c
     source/arm11_fast_mem.c
     source/ndsp_pcm_offload.c
@@ -193,10 +196,22 @@ set_source_files_properties(
 )
 target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
 target_link_options(tmc-3ds PRIVATE "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.map")
-target_link_libraries(tmc-3ds PRIVATE citro2d citro3d ctru m ppu_gpu_3ds_shader_bin)
+set(UPDATE_DEPS_ROOT "$ENV{DEVKITPRO}/portlibs/3ds" CACHE PATH "3DS updater dependencies")
+target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
+target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")
+# Official devkitPro curl enables gzip/deflate; the pinned minimal build does
+# not. Link its optional static dependency when supplied by the selected SDK.
+find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
+    "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH)
+if(TMC_UPDATE_ZLIB)
+    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
+else()
+    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
+endif()
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 file(MAKE_DIRECTORY "${TMC_ROMFS}")
+configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/update-ca.pem" "${TMC_ROMFS}/update-ca.pem" COPYONLY)
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/romfs/splash.rgb565"
     "${TMC_ROMFS}/splash.rgb565"

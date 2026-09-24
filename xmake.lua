@@ -203,8 +203,8 @@ elseif is_plat("android") then
     add_requires("libpng", {system = false})
     add_requires("zlib",   {system = false})
 else
-    add_requires("libpng", {system = true, optional = true})
-    add_requires("zlib",   {system = true, optional = true})
+    add_requires("libpng")
+    add_requires("zlib")
 end
 
 -- Global -mno-ms-bitfields on MinGW so the entire codebase matches the
@@ -861,12 +861,15 @@ target("tmc_pc")
     add_files("port/port_bugreport.cpp")     -- F9 bug-report capture (screenshot + save + state dump)
     add_files("port/port_bugreport_state.c") -- Crash-handler state snapshot
     add_files("port/port_linked_stubs.c")
+    add_files("port/port_3ds_full_view_policy.c")
     add_files("port/port_figurines.c")  -- gFigurines[] resolved from ROM (#57)
     add_files("port/port_draw.c")
     add_files("port/port_gba_mem.c")
     add_files("port/port_hdma.c")    -- HBlank-DMA simulation (iris/circle WIN0H)
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
+    add_files("port/port_bottle_compat.c", "port/port_cloud_tops_fight.c", "port/port_vaati_progress.c")
+    add_files("port/port_bomb_compat.c")
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
@@ -1323,6 +1326,31 @@ target_end()
 -- ====================
 -- EU sprite-table hole + byte-exact production OAM regression test.
 -- ====================
+target("bottle_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_files("port/port_bottle_compat.c", "port/port_bottle_compat_test.c")
+target_end()
+
+target("chest_reward_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_chest_reward_test.c", "port/port_bottle_compat.c")
+    add_files("src/object/chestSpawner.c", "src/playerItemUtils.c")
+target_end()
+
 target("sprite_region_oam_test")
     set_kind("binary")
     set_languages("c11")
@@ -1975,6 +2003,14 @@ target("port_ppu_gpu_3ds_bench")
 target_end()
 
 
+target("ppu_gpu_3ds_budget_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("platform/3ds/source", "port/ppu/include")
+    add_files("platform/3ds/tests/ppu_gpu_3ds_budget_test.c")
+target_end()
+
 target("port_ppu_gpu_3ds_model_test")
     set_kind("binary")
     set_languages("c11")
@@ -2486,3 +2522,134 @@ task("rom")
         options = {}
     }
 task_end()
+
+-- Production subtask restoration must preserve affine matrices and ownership.
+target("subtask_affine_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "port/SDL3")
+    add_defines("PC_PORT", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_subtask_affine_test.c", "src/subtask.c", "src/code_0805EC04.c")
+target_end()
+
+-- Production palette reservation and enemy death allocation regressions.
+for _, spec in ipairs({
+    {"palette_release_test", "port/port_palette_release_test.c", "src/color.c"},
+    {"enemy_death_fx_test", "port/port_enemy_death_fx_test.c", "src/enemyUtils.c"}
+}) do
+    target(spec[1])
+        set_kind("binary")
+        set_languages("c11")
+        set_targetdir("build/pc")
+        add_includedirs(".", "port", "include")
+        add_defines("PC_PORT", "USA", "ENGLISH")
+        add_cflags("-ffunction-sections")
+        if is_plat("macosx") then
+            add_ldflags("-Wl,-dead_strip")
+        else
+            add_ldflags("-Wl,--gc-sections")
+        end
+        add_files(spec[2], spec[3])
+    target_end()
+end
+
+target("gfx_slots_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_gfx_slots_test.c", "src/vram.c")
+target_end()
+
+-- Native equivalents of the three retail EU Backport corrections.
+target("eu_backport_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "port/SDL3")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_eu_backport_test.c", "src/npc/farmers.c", "src/roomInit.c",
+              "src/itemMetaData.c", "src/itemUtils.c")
+target_end()
+
+target("second_screen_state_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "platform/3ds/source")
+    add_defines("PC_PORT", "TMC_3DS", "USA", "ENGLISH")
+    add_files("port/port_second_screen_state.c", "port/port_second_screen_state_test.c")
+target_end()
+
+-- Legacy bomb ownership recovery and the actual bag reward path.
+target("bomb_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "build/USA")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_bomb_compat.c", "port/port_bomb_compat_test.c", "src/itemUtils.c", "src/itemMetaData.c")
+target_end()
+
+-- Production tile streaming and reveal continuity across adjacent rooms.
+target("widescreen_stream_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "include", "port", "port/ppu/include")
+    add_defines("PC_PORT", "USA", "ENGLISH", "MODE1_GBA_WIDTH=400", "MODE1_GBA_HEIGHT=240")
+    add_packages("libsdl3")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_widescreen_stream_test.c", "port/port_linked_stubs.c")
+    add_files("port/port_3ds_full_view_policy.c", "port/ppu/src/mode1.c")
+    add_syslinks("m")
+target_end()
+
+-- Exercise the production 3DS wrapper without SDK/hardware dependencies.
+target("bottom_map_camera_3ds_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "platform/3ds/source")
+    add_defines("PC_PORT", "TMC_3DS", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+        add_syslinks("m")
+    end
+    add_files("platform/3ds/tests/bottom_map_camera_3ds_test.c",
+              "platform/3ds/source/bottom_map_anim_3ds.c")
+target_end()
