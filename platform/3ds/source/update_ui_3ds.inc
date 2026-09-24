@@ -34,8 +34,7 @@ static int UpdateTextWidth(const char* text) {
     snprintf(label,sizeof(label),"%s",text);
     for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
     text=label;
-    int w = Port_SecondScreenTheme_BigTextWidth(text, 1);
-    return w ? w : TextWidthPx(text, 1);
+    return Port_SecondScreenTheme_BigTextWidth(text, 1);
 }
 
 static void UpdateCenteredText(const SSurf* s, const char* text, int cx, int y) {
